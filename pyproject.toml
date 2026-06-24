@@ -1,0 +1,32 @@
+[project]
+name = "exam-skill"
+version = "0.1.0"
+description = "Local RAG exam review planner with LangChain, Chroma, and FastAPI."
+requires-python = ">=3.10"
+dependencies = [
+  "chromadb>=0.5.0",
+  "docx2txt>=0.8",
+  "fastapi>=0.111.0",
+  "langchain>=0.2.0",
+  "langchain-chroma>=0.1.0",
+  "langchain-community>=0.2.0",
+  "langchain-huggingface>=0.0.3",
+  "langchain-openai>=0.1.0",
+  "langchain-text-splitters>=0.2.0",
+  "pydantic>=2.7.0",
+  "pypdf>=4.2.0",
+  "python-multipart>=0.0.9",
+  "sentence-transformers>=3.0.0",
+  "unstructured[pptx]>=0.14.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.scripts]
+exam-skill = "app.cli:main"
+exam-skill-api = "main:run"
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
