@@ -1,6 +1,6 @@
 from app.chains.review_chain import generate_markdown, retrieve_review_context
 from app.schemas import ReviewRequest, ReviewResult
-from app.services.index_manifest import ensure_files_indexed
+from app.services.index_manifest import ensure_files_indexed, file_hashes
 from app.services.markdown_writer import write_review_markdown
 
 
@@ -11,6 +11,8 @@ def run_review(request: ReviewRequest) -> ReviewResult:
     knowledge_docs, exam_docs = retrieve_review_context(
         request.subject,
         request.target_score,
+        knowledge_hashes=file_hashes(request.knowledge_files),
+        exam_hashes=file_hashes(request.exam_files),
     )
 
     markdown = generate_markdown(

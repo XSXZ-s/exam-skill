@@ -75,6 +75,10 @@ def ensure_files_indexed(subject: str, store_type: str, paths: list[Path]) -> In
     return stats
 
 
+def file_hashes(paths: list[Path]) -> list[str]:
+    return [_hash_file(path) for path in paths]
+
+
 def _manifest_path(subject: str) -> Path:
     return CHROMA_DIR / subject / "manifest.json"
 

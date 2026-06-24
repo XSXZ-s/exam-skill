@@ -6,7 +6,12 @@ from app.prompts.review_prompt import build_review_prompt
 from app.services.vectorstore import get_store
 
 
-def retrieve_review_context(subject: str, target_score: int) -> tuple[list[Document], list[Document]]:
+def retrieve_review_context(
+    subject: str,
+    target_score: int,
+    knowledge_hashes: list[str],
+    exam_hashes: list[str],
+) -> tuple[list[Document], list[Document]]:
     base_query = (
         f"{subject} target {target_score}/100 important topics common question types "
         "exam difficulty homework high-frequency topics must learn"
@@ -15,14 +20,25 @@ def retrieve_review_context(subject: str, target_score: int) -> tuple[list[Docum
         base_query,
         k=settings.retrieval_k,
         fetch_k=settings.retrieval_fetch_k,
+        filter=_hash_filter(exam_hashes),
     )
     knowledge_query = _build_exam_guided_query(subject, target_score, exam_docs)
     knowledge_docs = get_store(subject, "knowledge").max_marginal_relevance_search(
         knowledge_query,
         k=settings.retrieval_k,
         fetch_k=settings.retrieval_fetch_k,
+        filter=_hash_filter(knowledge_hashes),
     )
     return knowledge_docs, exam_docs
+
+
+def _hash_filter(content_hashes: list[str]) -> dict | None:
+    if not content_hashes:
+        return None
+    unique_hashes = list(dict.fromkeys(content_hashes))
+    if len(unique_hashes) == 1:
+        return {"content_hash": unique_hashes[0]}
+    return {"content_hash": {"$in": unique_hashes}}
 
 
 def _build_exam_guided_query(
