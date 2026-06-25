@@ -16,6 +16,7 @@ app = FastAPI(title="Exam Skill RAG API")
 class AnalyzePayload(BaseModel):
     knowledge_files: list[str]
     exam_files: list[str]
+    instruction_files: list[str] = []
     target_score: int
 
 
@@ -42,6 +43,7 @@ def analyze_subject(subject: str, payload: AnalyzePayload) -> dict[str, str]:
         subject=subject,
         knowledge_files=[_resolve_subject_file(subject_dir, p) for p in payload.knowledge_files],
         exam_files=[_resolve_subject_file(subject_dir, p) for p in payload.exam_files],
+        instruction_files=[_resolve_instruction_file(subject_dir, p) for p in payload.instruction_files],
         target_score=payload.target_score,
     )
     result = run_review(request)
@@ -54,6 +56,13 @@ def _resolve_subject_file(subject_dir: Path, relative_path: str) -> Path:
         raise HTTPException(status_code=400, detail=f"Invalid path: {relative_path}")
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
+    return path
+
+
+def _resolve_instruction_file(subject_dir: Path, relative_path: str) -> Path:
+    path = _resolve_subject_file(subject_dir, relative_path)
+    if path.suffix.lower() not in {".txt", ".md"}:
+        raise HTTPException(status_code=400, detail=f"Instruction file must be txt or md: {relative_path}")
     return path
 
 

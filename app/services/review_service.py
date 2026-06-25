@@ -20,6 +20,7 @@ def run_review(request: ReviewRequest) -> ReviewResult:
         target_score=request.target_score,
         knowledge_files=[p.name for p in request.knowledge_files],
         exam_files=[p.name for p in request.exam_files],
+        user_instruction=_read_instruction_files(request.instruction_files),
         knowledge_docs=knowledge_docs,
         exam_docs=exam_docs,
     )
@@ -33,3 +34,12 @@ def run_review(request: ReviewRequest) -> ReviewResult:
         target_score=request.target_score,
         output_path=output_path,
     )
+
+
+def _read_instruction_files(paths) -> str:
+    parts = []
+    for path in paths:
+        text = path.read_text(encoding="utf-8").strip()
+        if text:
+            parts.append(f"## {path.name}\n{text}")
+    return "\n\n".join(parts)

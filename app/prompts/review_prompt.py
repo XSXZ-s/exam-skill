@@ -6,6 +6,7 @@ def build_review_prompt(
     target_score: int,
     knowledge_files: list[str],
     exam_files: list[str],
+    user_instruction: str,
     knowledge_docs: list[Document],
     exam_docs: list[Document],
 ) -> str:
@@ -20,6 +21,9 @@ def build_review_prompt(
 
 本校出题参考资料：
 {_bullet_list(exam_files)}
+
+用户本次额外要求：
+{user_instruction or "无"}
 
 知识库检索片段：
 {_format_docs(knowledge_docs)}
@@ -38,6 +42,7 @@ def build_review_prompt(
 
 要求：
 - 使用 Markdown。
+- 优先满足“用户本次额外要求”，但不要把额外要求当作资料证据。
 - 明确说明依据来自知识库还是本校出题参考资料。
 - 不要承诺押题命中，只能表达高频、重点、建议掌握。
 - 内容要适合直接拿来复习。
@@ -59,4 +64,3 @@ def _format_docs(docs: list[Document]) -> str:
         text = doc.page_content.strip().replace("\n", " ")
         blocks.append(f"### 片段 {i}\n来源：{source}\n\n{text[:900]}")
     return "\n\n".join(blocks)
-

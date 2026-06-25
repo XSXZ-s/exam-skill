@@ -16,6 +16,7 @@ class ReviewRequest(BaseModel):
     subject: str
     knowledge_files: list[Path]
     exam_files: list[Path]
+    instruction_files: list[Path] = Field(default_factory=list)
     target_score: int = Field(ge=0, le=100)
 
 
@@ -23,4 +24,3 @@ class ReviewResult(BaseModel):
     subject: str
     target_score: int
     output_path: Path
-

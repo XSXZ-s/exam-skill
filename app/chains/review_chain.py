@@ -61,6 +61,7 @@ def generate_markdown(
     target_score: int,
     knowledge_files: list[str],
     exam_files: list[str],
+    user_instruction: str,
     knowledge_docs: list[Document],
     exam_docs: list[Document],
 ) -> str:
@@ -70,6 +71,7 @@ def generate_markdown(
             target_score,
             knowledge_files,
             exam_files,
+            user_instruction,
             knowledge_docs,
             exam_docs,
         )
@@ -85,6 +87,7 @@ def generate_markdown(
         target_score=target_score,
         knowledge_files=knowledge_files,
         exam_files=exam_files,
+        user_instruction=user_instruction,
         knowledge_docs=knowledge_docs,
         exam_docs=exam_docs,
     )
@@ -97,6 +100,7 @@ def build_fallback_markdown(
     target_score: int,
     knowledge_files: list[str],
     exam_files: list[str],
+    user_instruction: str,
     knowledge_docs: list[Document],
     exam_docs: list[Document],
 ) -> str:
@@ -109,6 +113,9 @@ def build_fallback_markdown(
 
 ### 本校出题参考资料
 {_bullet_list(exam_files)}
+
+### 用户本次额外要求
+{user_instruction or "无"}
 
 ## 目标分数策略
 

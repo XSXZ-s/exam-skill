@@ -21,6 +21,7 @@ def main() -> None:
         print(f"已选择：{subject}")
         print("该学科目录下没有发现支持的资料文件。支持：pdf、pptx、docx、txt、md。")
         return
+    instruction_candidates = [p for p in files if p.suffix.lower() in {".txt", ".md"}]
 
     print(f"\n已选择：{subject}")
     knowledge_files = _choose_many(
@@ -33,6 +34,12 @@ def main() -> None:
         hint="这些资料用于分析本校出题风格、常考题型、难度水平和重点偏好。推荐选择课后作业、历年试卷、平时测验、复习题、老师重点题。",
         files=files,
     )
+    instruction_files = _choose_many(
+        title="\n请选择作为【额外需求描述】的文件编号，可多选，用逗号分隔；直接回车则跳过此部分。",
+        hint="这类文件会原样作为本次提示性指令传给模型，不会进入知识库或向量检索。推荐使用 txt/md 描述本次输出要求、老师口头提示、复习偏好。",
+        files=instruction_candidates,
+        required=False,
+    )
     target_score = _ask_score()
 
     print("\n复习任务配置如下：")
@@ -43,6 +50,12 @@ def main() -> None:
     print("本校出题参考资料：")
     for path in exam_files:
         print(f"- {path.name}")
+    print("额外需求描述：")
+    if instruction_files:
+        for path in instruction_files:
+            print(f"- {path.name}")
+    else:
+        print("- 未选择")
     print(f"目标分数：{target_score}")
 
     confirm = input("\n是否开始分析？Y/n: ").strip().lower()
@@ -55,6 +68,7 @@ def main() -> None:
             subject=subject,
             knowledge_files=knowledge_files,
             exam_files=exam_files,
+            instruction_files=instruction_files,
             target_score=target_score,
         )
     )
@@ -72,17 +86,27 @@ def _choose_one(title: str, items: list[str]) -> str:
         print("输入无效，请重新选择。")
 
 
-def _choose_many(title: str, hint: str, files: list[Path]) -> list[Path]:
+def _choose_many(
+    title: str,
+    hint: str,
+    files: list[Path],
+    required: bool = True,
+) -> list[Path]:
     while True:
         print(title)
         print(hint)
         for i, path in enumerate(files, start=1):
             print(f"{i}. {path.name}")
         raw = input("请输入编号，例如 1,2,4：").strip()
+        if not raw and not required:
+            return []
         indexes = _parse_indexes(raw, len(files))
         if indexes:
             return [files[i - 1] for i in indexes]
-        print("输入无效，请至少选择一个有效编号。")
+        if required:
+            print("输入无效，请至少选择一个有效编号。")
+        else:
+            print("输入无效，请输入有效编号，或直接回车跳过。")
 
 
 def _parse_indexes(raw: str, max_index: int) -> list[int]:
