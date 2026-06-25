@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exam Skill</title>
+    <link rel="stylesheet" href="/frontend/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel setup-panel">
+        <header class="topbar">
+          <div>
+            <h1>Exam Skill</h1>
+            <p>选择资料，生成复习方案。</p>
+          </div>
+          <button id="refreshBtn" class="icon-button" type="button" title="刷新">↻</button>
+        </header>
+
+        <section class="settings">
+          <label>
+            <span>学科</span>
+            <select id="subjectSelect"></select>
+          </label>
+          <label>
+            <span>目标分数</span>
+            <input id="targetScore" type="number" min="0" max="100" value="85" />
+          </label>
+        </section>
+
+        <section class="columns">
+          <article class="picker">
+            <div class="picker-head">
+              <h2>知识库资料</h2>
+              <button type="button" data-toggle="knowledge">全选</button>
+            </div>
+            <div id="knowledgeList" class="file-list"></div>
+          </article>
+
+          <article class="picker">
+            <div class="picker-head">
+              <h2>出题参考资料</h2>
+              <button type="button" data-toggle="exam">全选</button>
+            </div>
+            <div id="examList" class="file-list"></div>
+          </article>
+
+          <article class="picker">
+            <div class="picker-head">
+              <h2>额外需求描述</h2>
+              <button type="button" data-toggle="instruction">全选</button>
+            </div>
+            <div id="instructionList" class="file-list"></div>
+          </article>
+        </section>
+
+        <footer class="actionbar">
+          <span id="statusText">正在读取 resources...</span>
+          <button id="analyzeBtn" class="primary" type="button">生成复习方案</button>
+        </footer>
+      </section>
+
+      <section class="panel preview-panel">
+        <div class="panel-head preview-head">
+          <div>
+            <h2>结果预览</h2>
+            <select id="outputSelect"></select>
+          </div>
+          <div class="tabs">
+            <button id="renderTab" class="tab active" type="button">预览</button>
+            <button id="sourceTab" class="tab" type="button">源码</button>
+          </div>
+        </div>
+        <article id="renderedPreview" class="markdown-body"></article>
+        <textarea id="markdownPreview" readonly placeholder="选择历史输出或生成新方案后，会在这里显示 Markdown 原文。"></textarea>
+      </section>
+
+      <section class="panel chat-panel">
+        <div class="panel-head">
+          <h2>追问</h2>
+        </div>
+        <div id="chatLog" class="chat-log"></div>
+        <textarea id="questionInput" placeholder="输入你不会的点，或把预览中的内容复制到这里提问。"></textarea>
+        <button id="askBtn" class="primary" type="button">发送追问</button>
+      </section>
+    </main>
+    <script src="/frontend/app.js"></script>
+  </body>
+</html>

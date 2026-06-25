@@ -43,3 +43,7 @@ def _read_instruction_files(paths) -> str:
         if text:
             parts.append(f"## {path.name}\n{text}")
     return "\n\n".join(parts)
+
+
+def read_instruction_files(paths) -> str:
+    return _read_instruction_files(paths)

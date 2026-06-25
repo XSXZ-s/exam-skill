@@ -65,7 +65,7 @@ def generate_markdown(
     knowledge_docs: list[Document],
     exam_docs: list[Document],
 ) -> str:
-    if not settings.deepseek_api_key:
+    if not settings.llm_api_key:
         return build_fallback_markdown(
             subject,
             target_score,
@@ -78,7 +78,7 @@ def generate_markdown(
 
     llm = ChatOpenAI(
         model=settings.chat_model,
-        api_key=settings.deepseek_api_key,
+        api_key=settings.llm_api_key,
         base_url=settings.chat_base_url,
         temperature=0.2,
     )
@@ -95,6 +95,48 @@ def generate_markdown(
     return str(response.content)
 
 
+def answer_question(
+    subject: str,
+    question: str,
+    output_markdown: str,
+    knowledge_docs: list[Document],
+    exam_docs: list[Document],
+) -> str:
+    if not settings.llm_api_key:
+        return "当前环境没有检测到 `LLM_API_KEY`，无法进行追问。请配置模型后重新运行。"
+
+    llm = ChatOpenAI(
+        model=settings.chat_model,
+        api_key=settings.llm_api_key,
+        base_url=settings.chat_base_url,
+        temperature=0.2,
+    )
+    prompt = f"""
+你是一个复习答疑助手。请基于当前复习方案、知识库片段和出题参考片段回答用户问题。
+
+学科：{subject}
+
+用户问题：
+{question}
+
+当前复习方案：
+{output_markdown[:6000]}
+
+知识库相关片段：
+{_format_docs(knowledge_docs)}
+
+出题参考相关片段：
+{_format_docs(exam_docs)}
+
+要求：
+- 优先基于资料回答，不要凭空扩展。
+- 如果资料不足，请明确说明。
+- 回答要适合复习场景，可以给例子、记忆方法或练习建议。
+""".strip()
+    response = llm.invoke(prompt)
+    return str(response.content)
+
+
 def build_fallback_markdown(
     subject: str,
     target_score: int,
@@ -105,7 +147,6 @@ def build_fallback_markdown(
     exam_docs: list[Document],
 ) -> str:
     return f"""# {subject} 目标{target_score}分复习方案
-
 ## 资料分析
 
 ### 知识库资料
@@ -126,13 +167,10 @@ def build_fallback_markdown(
 {_format_docs(knowledge_docs)}
 
 ## 检索到的本校出题风格线索
-
 {_format_docs(exam_docs)}
 
 ## 下一步
-
-当前环境没有检测到 `DEEPSEEK_API_KEY`，因此已完成本地 Chroma 索引和证据片段汇总。配置模型后重新运行，可生成完整的知识点分层、复习建议和配套练习题。
-"""
+当前环境没有检测到 `LLM_API_KEY`，因此已完成本地 Chroma 索引和证据片段汇总。配置模型后重新运行，可生成完整的知识点分层、复习建议和配套练习题。"""
 
 
 def _score_strategy(target_score: int) -> str:

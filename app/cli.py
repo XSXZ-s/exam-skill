@@ -11,7 +11,7 @@ def main() -> None:
     _configure_stdio()
     subjects = discover_subjects(RESOURCES_DIR)
     if not subjects:
-        print("未在 resources/ 下发现学科文件夹。请先创建例如 resources/高数 并放入资料。")
+        print("未在 resources/ 下发现学科文件夹。请先创建例如 resources/gaoshu 并放入资料。")
         return
 
     subject = _choose_one("发现以下学科资源：", subjects)
@@ -35,7 +35,7 @@ def main() -> None:
         files=files,
     )
     instruction_files = _choose_many(
-        title="\n请选择作为【额外需求描述】的文件编号，可多选，用逗号分隔；直接回车则跳过此部分。",
+        title="\n请选择作为【额外需求描述】的文件编号，可多选，用逗号分隔；直接回车跳过。",
         hint="这类文件会原样作为本次提示性指令传给模型，不会进入知识库或向量检索。推荐使用 txt/md 描述本次输出要求、老师口头提示、复习偏好。",
         files=instruction_candidates,
         required=False,
@@ -95,6 +95,12 @@ def _choose_many(
     while True:
         print(title)
         print(hint)
+        if not files:
+            if required:
+                print("没有可选文件。")
+            else:
+                print("没有可选的 txt/md 文件，已跳过。")
+                return []
         for i, path in enumerate(files, start=1):
             print(f"{i}. {path.name}")
         raw = input("请输入编号，例如 1,2,4：").strip()
@@ -136,3 +142,7 @@ def _configure_stdio() -> None:
         stream = getattr(sys, stream_name)
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
