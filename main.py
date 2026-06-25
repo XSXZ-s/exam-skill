@@ -6,8 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from app.config import RESOURCES_DIR
-from app.config import OUTPUT_DIR
+from app.config import OUTPUT_DIR, RESOURCES_DIR
 from app.schemas import ReviewRequest
 from app.services.document_loader import discover_files, discover_subjects
 from app.services.index_manifest import file_hashes

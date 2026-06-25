@@ -1,9 +1,12 @@
+const MAX_CHAT_MESSAGES = 30;
+
 const state = {
   subjects: [],
   files: [],
   outputs: [],
   currentOutput: "",
   previewMode: "render",
+  isAsking: false,
 };
 
 const subjectSelect = document.querySelector("#subjectSelect");
@@ -16,12 +19,15 @@ const renderedPreview = document.querySelector("#renderedPreview");
 const markdownPreview = document.querySelector("#markdownPreview");
 const statusText = document.querySelector("#statusText");
 const chatLog = document.querySelector("#chatLog");
+const chatStatus = document.querySelector("#chatStatus");
 const questionInput = document.querySelector("#questionInput");
 const analyzeBtn = document.querySelector("#analyzeBtn");
 const askBtn = document.querySelector("#askBtn");
 const refreshBtn = document.querySelector("#refreshBtn");
 const renderTab = document.querySelector("#renderTab");
 const sourceTab = document.querySelector("#sourceTab");
+const clearChatBtn = document.querySelector("#clearChatBtn");
+const printBtn = document.querySelector("#printBtn");
 
 refreshBtn.addEventListener("click", loadSubjects);
 subjectSelect.addEventListener("change", async () => {
@@ -31,8 +37,15 @@ subjectSelect.addEventListener("change", async () => {
 outputSelect.addEventListener("change", () => readOutput(outputSelect.value));
 analyzeBtn.addEventListener("click", analyze);
 askBtn.addEventListener("click", askQuestion);
+clearChatBtn.addEventListener("click", clearCurrentChat);
+printBtn.addEventListener("click", printCurrentPreview);
 renderTab.addEventListener("click", () => setPreviewMode("render"));
 sourceTab.addEventListener("click", () => setPreviewMode("source"));
+questionInput.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    askQuestion();
+  }
+});
 
 document.querySelectorAll("[data-toggle]").forEach((button) => {
   button.addEventListener("click", () => toggleGroup(button.dataset.toggle));
@@ -52,6 +65,8 @@ async function loadSubjects() {
 
     if (!state.subjects.length) {
       renderEmpty("resources 下还没有学科目录。");
+      setMarkdown("");
+      loadChatHistory();
       setBusy(false, "未发现学科。");
       return;
     }
@@ -79,13 +94,13 @@ async function loadOutputs(subject) {
     ...state.outputs.map((file) => `<option value="${escapeHtml(file)}">${escapeHtml(file)}</option>`),
   ].join("");
   setMarkdown("");
-  state.currentOutput = "";
+  setCurrentOutput("");
 }
 
 async function readOutput(filename) {
   if (!filename) {
     setMarkdown("");
-    state.currentOutput = "";
+    setCurrentOutput("");
     return;
   }
   const subject = subjectSelect.value;
@@ -93,7 +108,7 @@ async function readOutput(filename) {
     `/subjects/${encodeURIComponent(subject)}/outputs/${encodeURIComponent(filename)}`,
   );
   setMarkdown(data.markdown || "");
-  state.currentOutput = data.filename || filename;
+  setCurrentOutput(data.filename || filename);
 }
 
 async function analyze() {
@@ -119,11 +134,11 @@ async function analyze() {
       body: JSON.stringify(payload),
     });
     setMarkdown(result.markdown || "");
-    state.currentOutput = result.output_file || "";
+    const outputFile = result.output_file || "";
     await loadOutputs(subject);
-    if (state.currentOutput) {
-      outputSelect.value = state.currentOutput;
-      await readOutput(state.currentOutput);
+    if (outputFile) {
+      outputSelect.value = outputFile;
+      await readOutput(outputFile);
     }
     setBusy(false, `分析完成：${result.output_file || result.output_path}`);
   } catch (error) {
@@ -134,18 +149,22 @@ async function analyze() {
 async function askQuestion() {
   const question = questionInput.value.trim();
   const subject = subjectSelect.value;
+  const outputFile = state.currentOutput || outputSelect.value;
+
+  if (state.isAsking) return;
   if (!question) {
-    showStatusError(new Error("请输入追问内容。"));
+    showChatStatus("请输入追问内容。", true);
     return;
   }
-  if (!state.currentOutput && !outputSelect.value) {
-    showStatusError(new Error("请先选择或生成一个输出文件。"));
+  if (!outputFile) {
+    showChatStatus("请先选择或生成一个输出文件。", true);
     return;
   }
 
   appendChat("user", question);
   questionInput.value = "";
-  askBtn.disabled = true;
+  const pendingItem = appendChat("assistant", "AI 正在思考...", { pending: true, persist: false });
+  setAsking(true);
 
   try {
     const response = await requestJson(`/subjects/${encodeURIComponent(subject)}/chat`, {
@@ -154,14 +173,18 @@ async function askQuestion() {
       body: JSON.stringify({
         ...currentPayload(),
         question,
-        output_file: state.currentOutput || outputSelect.value,
+        output_file: outputFile,
       }),
     });
-    appendChat("assistant", response.answer || "");
+    updateChatItem(pendingItem, "assistant", response.answer || "模型没有返回内容。");
+    saveCurrentChat();
+    showChatStatus("追问完成。");
   } catch (error) {
-    appendChat("assistant error", error.message);
+    updateChatItem(pendingItem, "assistant error", `请求失败：${error.message}`);
+    saveCurrentChat();
+    showChatStatus(`请求失败：${error.message}`, true);
   } finally {
-    askBtn.disabled = false;
+    setAsking(false);
   }
 }
 
@@ -222,16 +245,84 @@ function selected(group) {
   );
 }
 
-function appendChat(role, text) {
+function setCurrentOutput(filename) {
+  state.currentOutput = filename;
+  loadChatHistory();
+}
+
+function chatStorageKey() {
+  const subject = subjectSelect.value || "未选择学科";
+  const outputFile = state.currentOutput || outputSelect.value || "未选择输出";
+  return `exam-skill:chat:${subject}:${outputFile}`;
+}
+
+function loadChatHistory() {
+  chatLog.innerHTML = "";
+  const raw = localStorage.getItem(chatStorageKey());
+  if (!raw) return;
+
+  try {
+    const messages = JSON.parse(raw);
+    if (!Array.isArray(messages)) return;
+    const recentMessages = messages.slice(-MAX_CHAT_MESSAGES);
+    if (recentMessages.length !== messages.length) {
+      localStorage.setItem(chatStorageKey(), JSON.stringify(recentMessages));
+    }
+    recentMessages.forEach((message) => {
+      if (message && typeof message.role === "string" && typeof message.text === "string") {
+        appendChat(message.role, message.text, { persist: false });
+      }
+    });
+  } catch {
+    localStorage.removeItem(chatStorageKey());
+  }
+}
+
+function saveCurrentChat() {
+  const messages = Array.from(chatLog.querySelectorAll(".chat-item"))
+    .filter((item) => !item.dataset.pending)
+    .map((item) => ({
+      role: item.dataset.role || "assistant",
+      text: item.dataset.text || item.textContent,
+    }))
+    .slice(-MAX_CHAT_MESSAGES);
+  localStorage.setItem(chatStorageKey(), JSON.stringify(messages));
+}
+
+function clearCurrentChat() {
+  localStorage.removeItem(chatStorageKey());
+  chatLog.innerHTML = "";
+  showChatStatus("当前对话已清空。");
+}
+
+function appendChat(role, text, options = {}) {
   const item = document.createElement("div");
+  item.className = `chat-item ${role}${options.pending ? " pending" : ""}`;
+  item.dataset.role = role;
+  item.dataset.text = text;
+  if (options.pending) item.dataset.pending = "true";
+  renderChatItem(item, role, text);
+  chatLog.appendChild(item);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  if (options.persist !== false) saveCurrentChat();
+  return item;
+}
+
+function updateChatItem(item, role, text) {
   item.className = `chat-item ${role}`;
+  item.dataset.role = role;
+  item.dataset.text = text;
+  delete item.dataset.pending;
+  renderChatItem(item, role, text);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function renderChatItem(item, role, text) {
   if (role === "assistant") {
-    item.innerHTML = marked.parse(text);
+    item.innerHTML = renderMarkdown(text);
   } else {
     item.textContent = text;
   }
-  chatLog.appendChild(item);
-  chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 function setMarkdown(markdown) {
@@ -248,17 +339,153 @@ function setPreviewMode(mode) {
   sourceTab.classList.toggle("active", !isRender);
 }
 
+function printCurrentPreview() {
+  if (!markdownPreview.value.trim()) {
+    showStatusError(new Error("请先选择或生成一个输出文件。"));
+    return;
+  }
+  setPreviewMode("render");
+  document.title = state.currentOutput || outputSelect.value || "复习方案";
+  window.print();
+}
+
 function renderMarkdown(markdown) {
   if (!markdown.trim()) {
     return '<p class="empty">选择历史输出或生成新方案后，会在这里显示 Markdown 预览。</p>';
   }
-  return marked.parse(markdown);
+
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let paragraph = [];
+  let list = [];
+  let listTag = "ul";
+  let table = [];
+  let code = [];
+  let quote = [];
+  let inCode = false;
+
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${inlineMarkdown(paragraph.join(" "))}</p>`);
+    paragraph = [];
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    html.push(`<${listTag}>${list.map((item) => `<li>${inlineMarkdown(item)}</li>`).join("")}</${listTag}>`);
+    list = [];
+    listTag = "ul";
+  };
+  const flushTable = () => {
+    if (!table.length) return;
+    html.push(renderTable(table));
+    table = [];
+  };
+  const flushQuote = () => {
+    if (!quote.length) return;
+    html.push(`<blockquote>${quote.map((item) => `<p>${inlineMarkdown(item)}</p>`).join("")}</blockquote>`);
+    quote = [];
+  };
+  const flushCode = () => {
+    if (!code.length) return;
+    html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
+    code = [];
+  };
+  const flushBlocks = () => {
+    flushParagraph();
+    flushList();
+    flushTable();
+    flushQuote();
+  };
+
+  lines.forEach((line, index) => {
+    if (/^```/.test(line.trim())) {
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        flushBlocks();
+        inCode = true;
+      }
+      return;
+    }
+
+    if (inCode) {
+      code.push(line);
+      return;
+    }
+
+    if (isTableRow(line) && (table.length || isTableSeparator(lines[index + 1] || ""))) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      table.push(line);
+      return;
+    }
+
+    flushTable();
+    const heading = line.match(/^(#{1,6})\s+(.+)$/);
+    const bullet = line.match(/^\s*[-*+]\s+(.+)$/);
+    const numbered = line.match(/^\s*\d+\.\s+(.+)$/);
+    const quoteLine = line.match(/^\s*>\s?(.+)$/);
+
+    if (heading) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      const level = Math.min(heading[1].length, 6);
+      html.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+    } else if (bullet) {
+      flushParagraph();
+      flushQuote();
+      if (list.length && listTag !== "ul") flushList();
+      listTag = "ul";
+      list.push(bullet[1]);
+    } else if (numbered) {
+      flushParagraph();
+      flushQuote();
+      if (list.length && listTag !== "ol") flushList();
+      listTag = "ol";
+      list.push(numbered[1]);
+    } else if (quoteLine) {
+      flushParagraph();
+      flushList();
+      quote.push(quoteLine[1]);
+    } else if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushBlocks();
+      html.push("<hr>");
+    } else if (!line.trim()) {
+      flushBlocks();
+    } else {
+      flushList();
+      flushQuote();
+      paragraph.push(line.trim());
+    }
+  });
+
+  flushCode();
+  flushBlocks();
+  return html.join("");
+}
+
+function isTableRow(line) {
+  return /^\s*\|.+\|\s*$/.test(line);
+}
+
+function isTableSeparator(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
 }
 
 function renderTable(lines) {
   const rows = lines
-    .filter((line) => !/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line))
-    .map((line) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim()));
+    .filter((line) => !isTableSeparator(line))
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((cell) => cell.trim()),
+    );
   if (!rows.length) return "";
   const [head, ...body] = rows;
   return `
@@ -273,14 +500,28 @@ function renderTable(lines) {
 
 function inlineMarkdown(text) {
   return escapeHtml(text)
+    .replace(/\\([*_`])/g, "$1")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
 }
 
 async function requestJson(url, options) {
-  const response = await fetch(url, options);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw new Error("无法连接后端服务，请确认 run_api.bat 的终端还在运行。");
+  }
+
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(text || `请求失败：${response.status}`);
+  }
+
   if (!response.ok) {
     throw new Error(data.detail || `请求失败：${response.status}`);
   }
@@ -293,8 +534,22 @@ function setBusy(isBusy, message) {
   statusText.textContent = message;
 }
 
+function setAsking(isAsking) {
+  state.isAsking = isAsking;
+  askBtn.disabled = isAsking;
+  askBtn.textContent = isAsking ? "思考中..." : "发送追问";
+  if (isAsking) {
+    showChatStatus("正在等待模型回复...");
+  }
+}
+
 function showStatusError(error) {
   setBusy(false, `错误：${error.message}`);
+}
+
+function showChatStatus(message, isError = false) {
+  chatStatus.textContent = message;
+  chatStatus.classList.toggle("error", isError);
 }
 
 function escapeHtml(value) {

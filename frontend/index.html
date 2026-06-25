@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Exam Skill</title>
     <link rel="stylesheet" href="/frontend/styles.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
     <main class="shell">
@@ -67,9 +66,12 @@
             <h2>结果预览</h2>
             <select id="outputSelect"></select>
           </div>
-          <div class="tabs">
-            <button id="renderTab" class="tab active" type="button">预览</button>
-            <button id="sourceTab" class="tab" type="button">源码</button>
+          <div class="preview-actions">
+            <button id="printBtn" class="secondary" type="button">导出 PDF</button>
+            <div class="tabs">
+              <button id="renderTab" class="tab active" type="button">预览</button>
+              <button id="sourceTab" class="tab" type="button">源码</button>
+            </div>
           </div>
         </div>
         <article id="renderedPreview" class="markdown-body"></article>
@@ -77,11 +79,16 @@
       </section>
 
       <section class="panel chat-panel">
-        <div class="panel-head">
-          <h2>追问</h2>
+        <div class="panel-head chat-head">
+          <div>
+            <h2>追问</h2>
+            <p class="chat-note">聊天记录保存在当前浏览器，本复习方案最多保留最近 30 条。</p>
+          </div>
+          <button id="clearChatBtn" class="text-button" type="button">清空对话</button>
         </div>
         <div id="chatLog" class="chat-log"></div>
-        <textarea id="questionInput" placeholder="输入你不会的点，或把预览中的内容复制到这里提问。"></textarea>
+        <textarea id="questionInput" placeholder="输入你不懂的点，或把预览中的内容复制到这里提问。"></textarea>
+        <div id="chatStatus" class="chat-status">选择复习方案后可以继续追问。</div>
         <button id="askBtn" class="primary" type="button">发送追问</button>
       </section>
     </main>
