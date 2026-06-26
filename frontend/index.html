@@ -74,7 +74,13 @@
             </div>
           </div>
         </div>
-        <article id="renderedPreview" class="markdown-body"></article>
+        <article id="renderedPreview" class="markdown-body">
+          <div id="generationStatus" class="generation-status" aria-live="polite" hidden>
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="generationStatusText">正在生成复习方案...</span>
+          </div>
+          <div id="renderedContent"></div>
+        </article>
         <textarea id="markdownPreview" readonly placeholder="选择历史输出或生成新方案后，会在这里显示 Markdown 原文。"></textarea>
       </section>
 

@@ -22,6 +22,7 @@ class AnalyzePayload(BaseModel):
     exam_files: list[str]
     instruction_files: list[str] = []
     target_score: int
+    allow_low_quality: bool = False
 
 
 class ChatPayload(BaseModel):
@@ -55,19 +56,34 @@ def list_subject_files(subject: str) -> dict[str, list[str]]:
 
 
 @app.post("/subjects/{subject}/analyze")
-def analyze_subject(subject: str, payload: AnalyzePayload) -> dict[str, str]:
+def analyze_subject(subject: str, payload: AnalyzePayload) -> dict:
     from app.schemas import ReviewRequest
+    from app.services.document_quality import inspect_files, low_quality_files
     from app.services.review_service import run_review
 
     subject_dir = RESOURCES_DIR / subject
     if not subject_dir.exists():
         raise HTTPException(status_code=404, detail="Subject not found")
 
+    knowledge_files = [_resolve_subject_file(subject_dir, p) for p in payload.knowledge_files]
+    exam_files = [_resolve_subject_file(subject_dir, p) for p in payload.exam_files]
+    instruction_files = [_resolve_instruction_file(subject_dir, p) for p in payload.instruction_files]
+    quality_reports = inspect_files(knowledge_files + exam_files)
+    low_quality = low_quality_files(quality_reports)
+    if low_quality and not payload.allow_low_quality:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "部分资料提取到的文字过少，可能影响分析准确性。请确认是否继续。",
+                "files": [report.to_dict(subject_dir) for report in low_quality],
+            },
+        )
+
     request = ReviewRequest(
         subject=subject,
-        knowledge_files=[_resolve_subject_file(subject_dir, p) for p in payload.knowledge_files],
-        exam_files=[_resolve_subject_file(subject_dir, p) for p in payload.exam_files],
-        instruction_files=[_resolve_instruction_file(subject_dir, p) for p in payload.instruction_files],
+        knowledge_files=knowledge_files,
+        exam_files=exam_files,
+        instruction_files=instruction_files,
         target_score=payload.target_score,
     )
     result = run_review(request)
@@ -75,6 +91,7 @@ def analyze_subject(subject: str, payload: AnalyzePayload) -> dict[str, str]:
         "output_path": str(result.output_path),
         "output_file": result.output_path.name,
         "markdown": result.output_path.read_text(encoding="utf-8"),
+        "quality_reports": [report.to_dict(subject_dir) for report in quality_reports],
     }
 
 
@@ -92,7 +109,7 @@ def read_subject_output(subject: str, filename: str) -> dict[str, str]:
 
 @app.post("/subjects/{subject}/chat")
 def chat_subject(subject: str, payload: ChatPayload) -> dict[str, str]:
-    from app.chains.review_chain import answer_question, retrieve_review_context
+    from app.chains.review_chain import answer_question, retrieve_exam_context, retrieve_knowledge_context
     from app.services.index_manifest import file_hashes
     from app.services.review_service import read_instruction_files
 
@@ -112,11 +129,16 @@ def chat_subject(subject: str, payload: ChatPayload) -> dict[str, str]:
         output_markdown = f"{output_markdown}\n\n## 用户额外需求\n{instruction_text}"
 
     if knowledge_files and exam_files:
-        knowledge_docs, exam_docs = retrieve_review_context(
-            subject,
-            payload.target_score,
-            knowledge_hashes=file_hashes(knowledge_files),
+        exam_docs = retrieve_exam_context(
+            subject=subject,
+            target_score=payload.target_score,
             exam_hashes=file_hashes(exam_files),
+        )
+        knowledge_docs = retrieve_knowledge_context(
+            subject=subject,
+            target_score=payload.target_score,
+            exam_profile=output_markdown,
+            knowledge_hashes=file_hashes(knowledge_files),
         )
     else:
         knowledge_docs, exam_docs = [], []

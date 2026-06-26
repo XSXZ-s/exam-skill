@@ -3,6 +3,7 @@ import sys
 
 from app.config import RESOURCES_DIR
 from app.schemas import ReviewRequest
+from app.services.document_quality import inspect_files, low_quality_files
 from app.services.document_loader import discover_files, discover_subjects
 from app.services.review_service import run_review
 
@@ -30,8 +31,8 @@ def main() -> None:
         files=files,
     )
     exam_files = _choose_many(
-        title="\n请选择作为【本校出题参考资料】的资料编号，可多选，用逗号分隔。",
-        hint="这些资料用于分析本校出题风格、常考题型、难度水平和重点偏好。推荐选择课后作业、历年试卷、平时测验、复习题、老师重点题。",
+        title="\n请选择作为【出题参考资料】的资料编号，可多选，用逗号分隔。",
+        hint="这些资料用于分析出题风格、常考题型、难度水平和重点偏好。推荐选择课后作业、历年试卷、平时测验、复习题、老师重点题。",
         files=files,
     )
     instruction_files = _choose_many(
@@ -47,7 +48,7 @@ def main() -> None:
     print("知识库资料：")
     for path in knowledge_files:
         print(f"- {path.name}")
-    print("本校出题参考资料：")
+    print("出题参考资料：")
     for path in exam_files:
         print(f"- {path.name}")
     print("额外需求描述：")
@@ -62,6 +63,19 @@ def main() -> None:
     if confirm not in {"", "y", "yes"}:
         print("已取消。")
         return
+
+    quality_reports = inspect_files(knowledge_files + exam_files)
+    low_quality = low_quality_files(quality_reports)
+    if low_quality:
+        print("\n以下资料提取到的文字较少，可能影响分析准确性：")
+        for report in low_quality:
+            print(
+                f"- {report.path.name}: {report.extracted_chars} 字符，"
+                f"{report.chunk_count} 个片段。{report.message}"
+            )
+        if not _ask_yes_no("是否仍然继续分析？y/N: ", default=False):
+            print("已停止。请先 OCR 或替换资料后再运行。")
+            return
 
     result = run_review(
         ReviewRequest(
@@ -135,6 +149,13 @@ def _ask_score() -> int:
         if raw.isdigit() and 0 <= int(raw) <= 100:
             return int(raw)
         print("分数无效，请输入 0 到 100 之间的整数。")
+
+
+def _ask_yes_no(prompt: str, default: bool) -> bool:
+    raw = input(prompt).strip().lower()
+    if not raw:
+        return default
+    return raw in {"y", "yes"}
 
 
 def _configure_stdio() -> None:

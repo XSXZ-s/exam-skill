@@ -49,6 +49,7 @@ class AppSettings(BaseModel):
     llm_api_key: str | None = os.getenv("LLM_API_KEY")
     retrieval_k: int = Field(default=_env_int("RETRIEVAL_K", 10), ge=1)
     retrieval_fetch_k: int = Field(default=_env_int("RETRIEVAL_FETCH_K", 30), ge=1)
+    min_extracted_chars: int = Field(default=_env_int("MIN_EXTRACTED_CHARS", 200), ge=0)
 
 
 settings = AppSettings()

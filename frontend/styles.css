@@ -310,6 +310,36 @@ input {
   box-shadow: 0 1px 4px rgba(24, 39, 75, 0.08);
 }
 
+.generation-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.generation-status[hidden] {
+  display: none;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #d9e5e3;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 #markdownPreview {
   flex: 1;
   width: 100%;
@@ -552,6 +582,10 @@ input {
 
   .primary {
     width: 100%;
+  }
+
+  .generation-status {
+    padding-bottom: 12px;
   }
 }
 

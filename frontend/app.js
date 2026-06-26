@@ -16,8 +16,11 @@ const examList = document.querySelector("#examList");
 const instructionList = document.querySelector("#instructionList");
 const outputSelect = document.querySelector("#outputSelect");
 const renderedPreview = document.querySelector("#renderedPreview");
+const renderedContent = document.querySelector("#renderedContent");
 const markdownPreview = document.querySelector("#markdownPreview");
 const statusText = document.querySelector("#statusText");
+const generationStatus = document.querySelector("#generationStatus");
+const generationStatusText = document.querySelector("#generationStatusText");
 const chatLog = document.querySelector("#chatLog");
 const chatStatus = document.querySelector("#chatStatus");
 const questionInput = document.querySelector("#questionInput");
@@ -99,6 +102,7 @@ async function loadOutputs(subject) {
 
 async function readOutput(filename) {
   if (!filename) {
+    hideGenerationStatus();
     setMarkdown("");
     setCurrentOutput("");
     return;
@@ -107,6 +111,7 @@ async function readOutput(filename) {
   const data = await requestJson(
     `/subjects/${encodeURIComponent(subject)}/outputs/${encodeURIComponent(filename)}`,
   );
+  hideGenerationStatus();
   setMarkdown(data.markdown || "");
   setCurrentOutput(data.filename || filename);
 }
@@ -125,14 +130,12 @@ async function analyze() {
   }
 
   setBusy(true, "正在分析，首次运行可能需要较长时间...");
-  setMarkdown("正在生成复习方案，请保持服务运行。");
+  showGenerationStatus("正在生成复习方案，请保持服务运行。");
+  setMarkdown("");
 
   try {
-    const result = await requestJson(`/subjects/${encodeURIComponent(subject)}/analyze`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const result = await postAnalyze(subject, payload);
+    hideGenerationStatus();
     setMarkdown(result.markdown || "");
     const outputFile = result.output_file || "";
     await loadOutputs(subject);
@@ -142,8 +145,48 @@ async function analyze() {
     }
     setBusy(false, `分析完成：${result.output_file || result.output_path}`);
   } catch (error) {
+    if (error.status === 409 && error.detail && Array.isArray(error.detail.files)) {
+      hideGenerationStatus();
+      const summary = error.detail.files
+        .map((file) => `${file.path}：${file.extracted_chars} 字符，${file.chunk_count} 个片段`)
+        .join("\n");
+      const shouldContinue = window.confirm(
+        `${error.detail.message}\n\n${summary}\n\n是否仍然继续分析？`,
+      );
+      if (shouldContinue) {
+        try {
+          showGenerationStatus("正在继续生成复习方案，请保持服务运行。");
+          const result = await postAnalyze(subject, { ...payload, allow_low_quality: true });
+          hideGenerationStatus();
+          setMarkdown(result.markdown || "");
+          const outputFile = result.output_file || "";
+          await loadOutputs(subject);
+          if (outputFile) {
+            outputSelect.value = outputFile;
+            await readOutput(outputFile);
+          }
+          setBusy(false, `分析完成：${result.output_file || result.output_path}`);
+          return;
+        } catch (retryError) {
+          hideGenerationStatus();
+          showStatusError(retryError);
+          return;
+        }
+      }
+      setBusy(false, "已停止分析。请先 OCR 或替换低质量资料。");
+      return;
+    }
+    hideGenerationStatus();
     showStatusError(error);
   }
+}
+
+async function postAnalyze(subject, payload) {
+  return requestJson(`/subjects/${encodeURIComponent(subject)}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+  });
 }
 
 async function askQuestion() {
@@ -327,7 +370,17 @@ function renderChatItem(item, role, text) {
 
 function setMarkdown(markdown) {
   markdownPreview.value = markdown;
-  renderedPreview.innerHTML = renderMarkdown(markdown);
+  renderedContent.innerHTML = renderMarkdown(markdown);
+}
+
+function showGenerationStatus(message) {
+  setPreviewMode("render");
+  generationStatusText.textContent = message;
+  generationStatus.hidden = false;
+}
+
+function hideGenerationStatus() {
+  generationStatus.hidden = true;
 }
 
 function setPreviewMode(mode) {
@@ -523,7 +576,16 @@ async function requestJson(url, options) {
   }
 
   if (!response.ok) {
-    throw new Error(data.detail || `请求失败：${response.status}`);
+    const message =
+      typeof data.detail === "string"
+        ? data.detail
+        : data.detail && data.detail.message
+          ? data.detail.message
+          : `请求失败：${response.status}`;
+    const error = new Error(message);
+    error.status = response.status;
+    error.detail = data.detail;
+    throw error;
   }
   return data;
 }
