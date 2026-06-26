@@ -11,7 +11,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 echo Starting API server...
 echo Browser URL: http://127.0.0.1:8000/
-start "" cmd /c "timeout /t 5 /nobreak >nul && start http://127.0.0.1:8000/"
+start "" /b powershell -NoProfile -Command "Start-Sleep -Seconds 5; Start-Process 'http://127.0.0.1:8000/'"
 ".venv\Scripts\python.exe" main.py
 echo.
 pause

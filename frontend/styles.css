@@ -608,4 +608,31 @@ input {
   .markdown-body blockquote {
     break-inside: avoid;
   }
+
+  .markdown-body code {
+    background: #f1f3f5;
+    color: #111827;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .markdown-body pre {
+    border: 1px solid #c8d0da;
+    background: #f3f5f7;
+    color: #111827;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .markdown-body pre code {
+    background: transparent;
+    color: inherit;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
 }
