@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Thread
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -7,18 +8,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.config import OUTPUT_DIR, RESOURCES_DIR
-from app.schemas import ReviewRequest
-from app.services.document_loader import discover_files, discover_subjects
-from app.services.index_manifest import file_hashes
-from app.services.review_service import read_instruction_files, run_review
-from app.chains.review_chain import answer_question, retrieve_review_context
 
 
 app = FastAPI(title="Exam Skill RAG API")
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
+SUPPORTED_EXTENSIONS = {".pdf", ".pptx", ".docx", ".txt", ".md"}
+WARMUP_STATUS = {"state": "pending", "message": "模型组件等待预热"}
 
 if FRONTEND_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+
+
+@app.on_event("startup")
+def start_background_warmup() -> None:
+    thread = Thread(target=_warmup_components, daemon=True)
+    thread.start()
 
 
 class AnalyzePayload(BaseModel):
@@ -47,7 +51,7 @@ def index() -> FileResponse:
 
 @app.get("/subjects")
 def list_subjects() -> dict[str, list[str]]:
-    return {"subjects": discover_subjects(RESOURCES_DIR)}
+    return {"subjects": _discover_subjects(RESOURCES_DIR)}
 
 
 @app.get("/subjects/{subject}/files")
@@ -55,11 +59,19 @@ def list_subject_files(subject: str) -> dict[str, list[str]]:
     subject_dir = RESOURCES_DIR / subject
     if not subject_dir.exists():
         raise HTTPException(status_code=404, detail="Subject not found")
-    return {"files": [str(p.relative_to(subject_dir)) for p in discover_files(subject_dir)]}
+    return {"files": [str(p.relative_to(subject_dir)) for p in _discover_files(subject_dir)]}
+
+
+@app.get("/warmup")
+def warmup_status() -> dict[str, str]:
+    return WARMUP_STATUS.copy()
 
 
 @app.post("/subjects/{subject}/analyze")
 def analyze_subject(subject: str, payload: AnalyzePayload) -> dict[str, str]:
+    from app.schemas import ReviewRequest
+    from app.services.review_service import run_review
+
     subject_dir = RESOURCES_DIR / subject
     if not subject_dir.exists():
         raise HTTPException(status_code=404, detail="Subject not found")
@@ -93,6 +105,10 @@ def read_subject_output(subject: str, filename: str) -> dict[str, str]:
 
 @app.post("/subjects/{subject}/chat")
 def chat_subject(subject: str, payload: ChatPayload) -> dict[str, str]:
+    from app.chains.review_chain import answer_question, retrieve_review_context
+    from app.services.index_manifest import file_hashes
+    from app.services.review_service import read_instruction_files
+
     subject_dir = RESOURCES_DIR / subject
     if not subject_dir.exists():
         raise HTTPException(status_code=404, detail="Subject not found")
@@ -136,6 +152,34 @@ def _resolve_subject_file(subject_dir: Path, relative_path: str) -> Path:
     return path
 
 
+def _discover_subjects(resources_dir: Path) -> list[str]:
+    if not resources_dir.exists():
+        return []
+    return sorted(p.name for p in resources_dir.iterdir() if p.is_dir())
+
+
+def _discover_files(subject_dir: Path) -> list[Path]:
+    if not subject_dir.exists():
+        return []
+    files = [
+        p
+        for p in subject_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
+    return sorted(files, key=lambda p: str(p).lower())
+
+
+def _warmup_components() -> None:
+    WARMUP_STATUS.update({"state": "running", "message": "模型组件预热中"})
+    try:
+        from app.services.vectorstore import get_embeddings
+
+        get_embeddings()
+        WARMUP_STATUS.update({"state": "ready", "message": "模型组件已就绪"})
+    except Exception as exc:
+        WARMUP_STATUS.update({"state": "failed", "message": f"模型组件预热失败：{exc}"})
+
+
 def _resolve_instruction_file(subject_dir: Path, relative_path: str) -> Path:
     path = _resolve_subject_file(subject_dir, relative_path)
     if path.suffix.lower() not in {".txt", ".md"}:
@@ -163,7 +207,7 @@ def _resolve_output_file(subject: str, filename: str) -> Path:
 
 
 def run() -> None:
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
 
 
 if __name__ == "__main__":

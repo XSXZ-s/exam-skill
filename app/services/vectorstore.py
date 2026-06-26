@@ -1,4 +1,5 @@
 from hashlib import sha1
+from functools import lru_cache
 from pathlib import Path
 
 from langchain_chroma import Chroma
@@ -8,10 +9,12 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from app.config import CHROMA_DIR, settings
 
 
+@lru_cache(maxsize=1)
 def get_embeddings() -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(model_name=settings.embedding_model)
 
 
+@lru_cache(maxsize=64)
 def get_store(subject: str, store_type: str) -> Chroma:
     persist_dir = get_store_dir(subject, store_type)
     persist_dir.mkdir(parents=True, exist_ok=True)
