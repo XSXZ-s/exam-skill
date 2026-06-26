@@ -13,6 +13,10 @@ Exam Skill 是一个本地 RAG 复习方案生成工具。它会读取 `resource
 
 如果默认安装源较慢，可双击 `install_cn.bat` 使用清华 PyPI 镜像源。
 
+首次运行 `install.bat` 需要下载并安装依赖，可能耗时较长，但通常只需安装一次。后续使用时只需要运行 `run_api.bat` 打开本地网页，或运行 `run_cli.bat` 使用终端交互版。
+
+安装脚本会在项目文件夹内创建本地虚拟环境 `.venv`，依赖和项目缓存也只会保存在当前项目目录范围内，不会污染你电脑上的其他应用或文件。
+
 ## 模型配置
 
 默认使用 DeepSeek 的 OpenAI-compatible API：
