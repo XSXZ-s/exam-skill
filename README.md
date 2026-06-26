@@ -45,6 +45,24 @@ LLM_BASE_URL=http://127.0.0.1:11434/v1
 
 不同服务商的模型名和 base URL 不同，请以对应服务商文档为准。
 
+## HuggingFace 下载源
+
+项目会使用本地 embedding 模型建立 Chroma 向量索引。首次生成时可能需要从 HuggingFace 下载或检查模型文件。
+
+`.env.example` 默认使用国内镜像源：
+
+```env
+HF_ENDPOINT=https://hf-mirror.com
+```
+
+如果镜像源连接失败，并且你有可用的 VPN 或代理，可以在 `.env` 中切换为官方源：
+
+```env
+HF_ENDPOINT=https://huggingface.co
+```
+
+这个配置只影响本地 embedding 模型的下载和检查，不影响 `LLM_API_KEY` 对应的大模型服务。
+
 ## 目录约定
 
 ```text
