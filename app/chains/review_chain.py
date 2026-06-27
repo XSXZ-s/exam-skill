@@ -3,6 +3,7 @@ from langchain_openai import ChatOpenAI
 
 from app.config import settings
 from app.prompts.review_prompt import (
+    REVIEW_ANSWER_RULES,
     build_exam_profile_prompt,
     build_review_prompt,
 )
@@ -163,12 +164,11 @@ def answer_question(
 出题参考相关片段：
 {_format_docs(exam_docs)}
 
+{REVIEW_ANSWER_RULES}
+
 要求：
 - 优先基于资料回答，不要凭空扩展。
 - 如果资料不足，请明确说明。
-- 涉及数值计算、选择题或公式推导时，必须保证公式、代入、计算过程和最终答案一致。
-- 如果计算结果与给定选项不一致，不要为了匹配选项强行改答案；应明确写出“按计算结果为 X，选项中没有匹配项，疑似题目或选项有误”。
-- 如果发现前后结论冲突，必须以可复核的计算过程为准，并提示冲突来源。
 - 回答要适合复习场景，可以给例子、记忆方法或练习建议。
 """.strip()
     response = llm.invoke(prompt)
