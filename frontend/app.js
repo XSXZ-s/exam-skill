@@ -31,6 +31,7 @@ const renderTab = document.querySelector("#renderTab");
 const sourceTab = document.querySelector("#sourceTab");
 const clearChatBtn = document.querySelector("#clearChatBtn");
 const printBtn = document.querySelector("#printBtn");
+const saveMarkdownBtn = document.querySelector("#saveMarkdownBtn");
 
 refreshBtn.addEventListener("click", loadSubjects);
 subjectSelect.addEventListener("change", async () => {
@@ -42,8 +43,12 @@ analyzeBtn.addEventListener("click", analyze);
 askBtn.addEventListener("click", askQuestion);
 clearChatBtn.addEventListener("click", clearCurrentChat);
 printBtn.addEventListener("click", printCurrentPreview);
+saveMarkdownBtn.addEventListener("click", saveCurrentMarkdown);
 renderTab.addEventListener("click", () => setPreviewMode("render"));
 sourceTab.addEventListener("click", () => setPreviewMode("source"));
+markdownPreview.addEventListener("input", () => {
+  renderedContent.innerHTML = renderMarkdown(markdownPreview.value);
+});
 questionInput.addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
     askQuestion();
@@ -392,6 +397,36 @@ function setPreviewMode(mode) {
   sourceTab.classList.toggle("active", !isRender);
 }
 
+async function saveCurrentMarkdown() {
+  const subject = subjectSelect.value;
+  const outputFile = state.currentOutput || outputSelect.value;
+  if (!outputFile) {
+    showStatusError(new Error("请先选择或生成一个输出文件。"));
+    return;
+  }
+  const confirmed = window.confirm("保存会覆盖当前 output 中的 Markdown 文件，是否继续？");
+  if (!confirmed) return;
+
+  saveMarkdownBtn.disabled = true;
+  try {
+    const result = await requestJson(
+      `/subjects/${encodeURIComponent(subject)}/outputs/${encodeURIComponent(outputFile)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markdown: markdownPreview.value }),
+      },
+    );
+    setMarkdown(result.markdown || "");
+    setCurrentOutput(result.filename || outputFile);
+    setBusy(false, `已保存：${result.filename || outputFile}`);
+  } catch (error) {
+    showStatusError(error);
+  } finally {
+    saveMarkdownBtn.disabled = false;
+  }
+}
+
 function printCurrentPreview() {
   if (!markdownPreview.value.trim()) {
     showStatusError(new Error("请先选择或生成一个输出文件。"));
@@ -593,6 +628,7 @@ async function requestJson(url, options) {
 function setBusy(isBusy, message) {
   analyzeBtn.disabled = isBusy;
   refreshBtn.disabled = isBusy;
+  saveMarkdownBtn.disabled = isBusy;
   statusText.textContent = message;
 }
 

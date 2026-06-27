@@ -34,6 +34,10 @@ class ChatPayload(BaseModel):
     target_score: int = 85
 
 
+class OutputUpdatePayload(BaseModel):
+    markdown: str
+
+
 @app.get("/")
 def index() -> FileResponse:
     index_path = FRONTEND_DIR / "index.html"
@@ -105,6 +109,13 @@ def list_subject_outputs(subject: str) -> dict[str, list[str]]:
 def read_subject_output(subject: str, filename: str) -> dict[str, str]:
     path = _resolve_output_file(subject, filename)
     return {"filename": path.name, "markdown": path.read_text(encoding="utf-8")}
+
+
+@app.put("/subjects/{subject}/outputs/{filename}")
+def update_subject_output(subject: str, filename: str, payload: OutputUpdatePayload) -> dict[str, str]:
+    path = _resolve_output_file(subject, filename)
+    path.write_text(payload.markdown, encoding="utf-8")
+    return {"filename": path.name, "markdown": payload.markdown}
 
 
 @app.post("/subjects/{subject}/chat")
