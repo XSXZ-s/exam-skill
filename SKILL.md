@@ -38,7 +38,7 @@ Use "出题参考资料" for resources that reveal exam direction. Explain it as
 
 Create a Markdown file named:
 
-`output/<subject>/<subject>-目标<score>分-复习方案<number>.md`
+`output/<subject>/<subject-slug>-target<score>-review-<number>.md`
 
 Include:
 
