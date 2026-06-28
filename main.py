@@ -25,6 +25,11 @@ class AnalyzePayload(BaseModel):
     allow_low_quality: bool = False
 
 
+class MaterialAnalyzePayload(BaseModel):
+    files: list[str] = []
+    include_all: bool = False
+
+
 class ChatPayload(BaseModel):
     question: str
     output_file: str
@@ -51,12 +56,50 @@ def list_subjects() -> dict[str, list[str]]:
     return {"subjects": _discover_subjects(RESOURCES_DIR)}
 
 
+@app.get("/system/ocr/status")
+def get_ocr_status() -> dict:
+    from app.services.ocr_manager import ocr_status
+
+    return ocr_status()
+
+
+@app.post("/system/ocr/install")
+def install_ocr() -> dict:
+    from app.services.ocr_manager import start_ocr_install
+
+    return start_ocr_install()
+
+
+@app.get("/system/tasks/{task_id}")
+def get_system_task(task_id: str) -> dict:
+    from app.services.ocr_manager import get_task
+
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
 @app.get("/subjects/{subject}/files")
 def list_subject_files(subject: str) -> dict[str, list[str]]:
     subject_dir = RESOURCES_DIR / subject
     if not subject_dir.exists():
         raise HTTPException(status_code=404, detail="Subject not found")
     return {"files": [str(p.relative_to(subject_dir)) for p in _discover_files(subject_dir)]}
+
+
+@app.post("/subjects/{subject}/materials/analyze")
+def analyze_subject_materials(subject: str, payload: MaterialAnalyzePayload) -> dict:
+    from app.services.material_analyzer import analyze_materials
+
+    subject_dir = RESOURCES_DIR / subject
+    if not subject_dir.exists():
+        raise HTTPException(status_code=404, detail="Subject not found")
+    if payload.include_all:
+        files = _discover_files(subject_dir)
+    else:
+        files = [_resolve_subject_file(subject_dir, p) for p in payload.files]
+    return analyze_materials(subject, subject_dir, files)
 
 
 @app.post("/subjects/{subject}/analyze")

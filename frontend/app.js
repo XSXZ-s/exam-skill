@@ -11,9 +11,7 @@ const state = {
 
 const subjectSelect = document.querySelector("#subjectSelect");
 const targetScore = document.querySelector("#targetScore");
-const knowledgeList = document.querySelector("#knowledgeList");
-const examList = document.querySelector("#examList");
-const instructionList = document.querySelector("#instructionList");
+const materialList = document.querySelector("#materialList");
 const outputSelect = document.querySelector("#outputSelect");
 const renderedPreview = document.querySelector("#renderedPreview");
 const renderedContent = document.querySelector("#renderedContent");
@@ -123,22 +121,30 @@ async function readOutput(filename) {
 
 async function analyze() {
   const subject = subjectSelect.value;
-  const payload = currentPayload();
+  const selectedFiles = selectedFilesForAnalysis();
 
-  if (!payload.knowledge_files.length || !payload.exam_files.length) {
-    showStatusError(new Error("知识库资料和出题参考资料都至少需要选择一个文件。"));
+  if (!selectedFiles.length) {
+    showStatusError(new Error("请至少选择一个资料文件。"));
     return;
   }
-  if (!Number.isInteger(payload.target_score) || payload.target_score < 0 || payload.target_score > 100) {
+  const score = Number(targetScore.value);
+  if (!Number.isInteger(score) || score < 0 || score > 100) {
     showStatusError(new Error("目标分数需要是 0 到 100 之间的整数。"));
     return;
   }
 
-  setBusy(true, "正在分析，首次运行可能需要较长时间...");
-  showGenerationStatus("正在生成复习方案，请保持服务运行。");
+  setBusy(true, "正在识别资料范围和类型...");
+  showGenerationStatus("正在识别所选资料，请保持服务运行。");
   setMarkdown("");
 
+  let payload;
   try {
+    const materialPlan = await analyzeMaterials(subject, selectedFiles);
+    payload = payloadFromMaterialPlan(materialPlan, score);
+    if (!payload.knowledge_files.length || !payload.exam_files.length) {
+      throw new Error("未能同时识别出课件/知识资料和习题/出题参考资料，请检查选择或手动调整文件命名。");
+    }
+    showGenerationStatus(`${materialPlan.summary} 正在生成复习方案...`);
     const result = await postAnalyze(subject, payload);
     hideGenerationStatus();
     setMarkdown(result.markdown || "");
@@ -152,12 +158,7 @@ async function analyze() {
   } catch (error) {
     if (error.status === 409 && error.detail && Array.isArray(error.detail.files)) {
       hideGenerationStatus();
-      const summary = error.detail.files
-        .map((file) => `${file.path}：${file.extracted_chars} 字符，${file.chunk_count} 个片段`)
-        .join("\n");
-      const shouldContinue = window.confirm(
-        `${error.detail.message}\n\n${summary}\n\n是否仍然继续分析？`,
-      );
+      const shouldContinue = await handleLowQualityFiles(error.detail);
       if (shouldContinue) {
         try {
           showGenerationStatus("正在继续生成复习方案，请保持服务运行。");
@@ -186,12 +187,118 @@ async function analyze() {
   }
 }
 
+async function handleLowQualityFiles(detail) {
+  const summary = detail.files
+    .map((file) => `${file.path}：提取到 ${file.extracted_chars} 个字符，${file.chunk_count} 个片段`)
+    .join("\n");
+  const ocrStatus = await safeOcrStatus();
+  const baseMessage = [
+    "检测到部分资料可提取文字较少，可能是扫描 PDF、图片型课件、截图题目，或文件解析失败。",
+    "",
+    summary,
+    "",
+    "这类资料如果不先进行 OCR，后续生成的复习方案可能遗漏图片或扫描件中的重要内容。",
+    "纯文本、Markdown、Word 和可搜索 PDF 解析速度更快；启用 OCR 后可识别图片文字，但首次安装和后续分析都会更耗时。",
+  ].join("\n");
+
+  if (ocrStatus && ocrStatus.installed) {
+    return window.confirm(`${baseMessage}\n\n本地 OCR 增强包已安装。是否仍然继续分析？`);
+  }
+
+  const installOcr = window.confirm(
+    [
+      baseMessage,
+      "",
+      "是否现在安装本地 OCR 增强包？",
+      "安装可能需要较长时间，并会占用更多磁盘空间。安装完成后，可帮助分析图片和扫描件资料。",
+      "",
+      "选择“确定”：开始安装本地 OCR 增强包。",
+      "选择“取消”：不安装 OCR，你可以手动将图片或扫描件转换为文本后再放入 resources，以免影响方案完整性。",
+    ].join("\n"),
+  );
+
+  if (installOcr) {
+    await startOcrInstall();
+    return false;
+  }
+
+  return window.confirm(
+    [
+      "未安装 OCR 增强包。",
+      "如果继续，系统只会基于已提取到的少量文字生成，方案可能不完整。",
+      "",
+      "是否仍然继续分析？",
+    ].join("\n"),
+  );
+}
+
+async function safeOcrStatus() {
+  try {
+    return await requestJson("/system/ocr/status");
+  } catch {
+    return null;
+  }
+}
+
+async function startOcrInstall() {
+  try {
+    const result = await requestJson("/system/ocr/install", { method: "POST" });
+    if (result.installed) {
+      setBusy(false, result.message || "本地 OCR 增强包已安装。");
+      return;
+    }
+    const task = result.task || {};
+    setBusy(
+      false,
+      task.id
+        ? `OCR 安装任务已开始：${task.id}。请稍后刷新或查看任务状态。`
+        : result.message || "OCR 安装任务已开始。",
+    );
+    window.alert(
+      [
+        result.message || "已开始安装本地 OCR 增强包。",
+        "安装期间请保持后端服务运行。安装完成后，再重新生成复习方案。",
+        task.log_path ? `安装日志：${task.log_path}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  } catch (error) {
+    showStatusError(error);
+  }
+}
+
 async function postAnalyze(subject, payload) {
   return requestJson(`/subjects/${encodeURIComponent(subject)}/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
   });
+}
+
+async function analyzeMaterials(subject, files) {
+  return requestJson(`/subjects/${encodeURIComponent(subject)}/materials/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ files }),
+  });
+}
+
+function payloadFromMaterialPlan(plan, score) {
+  const knowledge = new Set();
+  const exam = new Set();
+  const instruction = new Set();
+  (plan.groups || []).forEach((group) => {
+    (group.knowledge_files || []).forEach((file) => knowledge.add(file));
+    (group.exam_files || []).forEach((file) => exam.add(file));
+    (group.instruction_files || []).forEach((file) => instruction.add(file));
+  });
+  return {
+    knowledge_files: Array.from(knowledge),
+    exam_files: Array.from(exam),
+    instruction_files: Array.from(instruction),
+    target_score: score,
+  };
 }
 
 async function askQuestion() {
@@ -215,11 +322,13 @@ async function askQuestion() {
   setAsking(true);
 
   try {
+    const materialPlan = await analyzeMaterials(subject, selectedMaterials());
+    const materialPayload = payloadFromMaterialPlan(materialPlan, Number(targetScore.value));
     const response = await requestJson(`/subjects/${encodeURIComponent(subject)}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...currentPayload(),
+        ...materialPayload,
         question,
         output_file: outputFile,
       }),
@@ -236,23 +345,12 @@ async function askQuestion() {
   }
 }
 
-function currentPayload() {
-  return {
-    knowledge_files: selected("knowledge"),
-    exam_files: selected("exam"),
-    instruction_files: selected("instruction"),
-    target_score: Number(targetScore.value),
-  };
+function selectedFilesForAnalysis() {
+  return selectedMaterials();
 }
 
 function renderLists() {
-  renderList(knowledgeList, state.files, "knowledge");
-  renderList(examList, state.files, "exam");
-  renderList(
-    instructionList,
-    state.files.filter((file) => /\.(txt|md)$/i.test(file)),
-    "instruction",
-  );
+  renderList(materialList, state.files, "material");
 }
 
 function renderList(container, files, group) {
@@ -274,9 +372,7 @@ function renderList(container, files, group) {
 }
 
 function renderEmpty(message) {
-  [knowledgeList, examList, instructionList].forEach((container) => {
-    container.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
-  });
+  materialList.innerHTML = `<div class="empty">${escapeHtml(message)}</div>`;
 }
 
 function toggleGroup(group) {
@@ -291,6 +387,10 @@ function selected(group) {
   return Array.from(document.querySelectorAll(`input[data-group="${group}"]:checked`)).map(
     (input) => input.value,
   );
+}
+
+function selectedMaterials() {
+  return selected("material");
 }
 
 function setCurrentOutput(filename) {

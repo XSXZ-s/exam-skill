@@ -43,6 +43,8 @@ select {
   display: flex;
   flex-direction: column;
   overflow-x: auto;
+  min-height: 600px;
+  max-height: calc(100vh - 40px);
 }
 
 .panel {
@@ -126,11 +128,16 @@ input {
   display: block;
   min-height: 0;
   overflow-x: auto;
+  overflow-y: auto;
   flex: 1;
 }
 
 .picker {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   border-bottom: 1px solid var(--border);
 }
 
@@ -139,6 +146,13 @@ input {
   padding: 0 14px;
   background: var(--soft);
   border-bottom: 1px solid var(--border);
+}
+
+.picker-head p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
 }
 
 .picker-head button {
@@ -154,7 +168,8 @@ input {
   display: grid;
   align-content: start;
   gap: 8px;
-  max-height: 260px;
+  flex: 1;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
   padding: 12px;
@@ -211,7 +226,8 @@ input {
 }
 
 .primary:disabled,
-.icon-button:disabled {
+.icon-button:disabled,
+.secondary:disabled {
   cursor: not-allowed;
   opacity: 0.65;
 }
