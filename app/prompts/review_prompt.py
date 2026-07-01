@@ -33,6 +33,17 @@ EXAM_PROFILE_ANSWER_RULES = """
 """.strip()
 
 
+MARKDOWN_FORMULA_RULES = """
+Markdown 与公式格式规则：
+- 行内公式统一使用 `$...$`，独立公式统一使用 `$$...$$`。
+- 不要使用 `\\(...\\)` 或 `\\[...\\]` 包裹公式。
+- 乘法符号统一使用 `×`，不要使用 `*`、`x` 或 `·` 表示乘法。
+- 科学计数法写作 `1.5×10^9`、`2.8×10^{-5}`，不要写成 `1.5*10^9`。
+- 普通变量若包含下标，请放在公式中，例如 `$CPU_{time}$`；正文不要写裸 `CPU_time`，避免 Markdown 误解析。
+- 表格单元格中的公式也遵守以上格式；能用普通文本表达的单位直接写 `Hz`、`ns`、`μs`。
+""".strip()
+
+
 def build_review_prompt(
     subject: str,
     target_score: int,
@@ -79,6 +90,8 @@ def build_review_prompt(
 {REVIEW_ANSWER_RULES}
 
 {REVIEW_PRACTICE_RULES}
+
+{MARKDOWN_FORMULA_RULES}
 
 要求：
 - 使用 Markdown。

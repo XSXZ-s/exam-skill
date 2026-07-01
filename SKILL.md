@@ -1,38 +1,56 @@
 ---
 name: exam-skill
-description: Build efficient exam review Markdown from subject resources using local RAG with LangChain, Chroma, and FastAPI. Use when the user wants to split a subject knowledge base and exam-style reference materials, index them by subject, choose a target score, and generate prioritized study notes with practice questions.
+description: Build exam-oriented review Markdown from local subject resources using automatic material grouping, semantic chunking, structured exam profiles, chapter briefs, and final synthesis.
 ---
 
 # Exam Review Planner
 
 ## Core Idea
 
-Use two separate local Chroma stores for each subject:
+This project is a local personal study tool. It turns selected subject resources into a target-score review plan through a staged workflow:
 
-- `chroma_db/<subject>/knowledge`: textbooks, lecture slides, notes, and other materials defining the subject knowledge scope.
-- `chroma_db/<subject>/exam`: homework, quizzes, past papers, review sheets, and other materials showing exam style, difficulty, and topic preference.
+- identify material type and chapter range from selected files;
+- split knowledge materials and exercises into semantic chunks;
+- structure exercise chunks into question profiles;
+- retrieve matching knowledge evidence from the knowledge store;
+- generate chapter briefs as reusable intermediate artifacts;
+- synthesize the final Markdown only from chapter briefs.
 
 Generate final Markdown under `output/<subject>/`.
 
+## Supported Materials
+
+The built-in parser supports:
+
+- `.md`
+- `.txt`
+- `.docx`
+- `.pptx`
+- text-extractable `.pdf`
+
+Scans, screenshots, images, and image-only PDFs are not handled by built-in OCR. Ask users to convert those files into text-oriented materials before generation.
+
+## Local Stores
+
+Use separate local stores and caches by subject:
+
+- `chroma_db/<subject>/knowledge`: semantic chunks from textbooks, slides, notes, and other knowledge materials.
+- `chroma_db/<subject>/exam`: semantic chunks from homework, quizzes, past papers, and other exam-style references.
+- `.cache/material_analysis/<subject>/`: material type and chapter grouping.
+- `.cache/semantic_chunks/<subject>/`: full semantic chunks with metadata.
+- `.cache/question_profiles/<subject>/`: structured exercise/question profiles.
+- `.cache/chapter_briefs/<subject>/`: per-chapter intermediate outputs.
+
 ## Workflow
 
-1. Scan `resources/` and ask the user to select a subject by number.
-2. Scan all files under `resources/<subject>/`.
-3. Ask the user to select knowledge base files.
-4. Ask the user to select exam-style reference files.
-5. Ask for a target score out of 100.
-6. Inspect selected files for extractable text and warn when files look like scanned/image-only materials.
-7. Ask whether to continue if low-quality files are detected.
-8. Extract, split, embed, and persist selected files into the matching Chroma stores.
-9. Retrieve from the `exam` store first and generate an exam style profile.
-10. Use the exam style profile to retrieve matching knowledge points from the `knowledge` store.
-11. Generate a Markdown review plan that separates must-learn, recommended, high-score, and deferrable topics.
-
-## Terminology
-
-Use "出题参考资料" for resources that reveal exam direction. Explain it as:
-
-> 这些资料用于分析出题风格、常考题型、难度水平和重点偏好。推荐选择课后作业、历年试卷、平时测验、复习题、老师重点题。
+1. Let the user select any relevant files for a subject.
+2. Analyze selected files and group them by material type and detected chapter.
+3. Inspect selected files for extractable text and stop when files look too low-quality unless the user confirms continuation.
+4. Split and index knowledge and exam files with chapter/file metadata.
+5. Convert exercise chunks into structured question profiles.
+6. Use the structured exam profile as the query signal to retrieve matching knowledge evidence.
+7. Generate per-chapter briefs and cache them.
+8. Generate the final review plan from chapter briefs.
 
 ## Output Requirements
 
@@ -40,15 +58,13 @@ Create a Markdown file named:
 
 `output/<subject>/<subject-slug>-target<score>-review-<number>.md`
 
-Include:
+The final plan should be practical rather than just a short list of retrieved points. It should include:
 
-- selected knowledge base files
-- selected exam-style reference files
-- an exam style profile summary
-- target score strategy
-- required topics
-- recommended topics
-- high-score topics
-- topics that can be deferred for the current score target
-- practice questions after each important topic
-- brief evidence from retrieved resources whenever possible
+- selected knowledge and exam reference files;
+- target-score strategy;
+- must-learn topics;
+- recommended topics;
+- high-score topics;
+- deferrable topics for the current target;
+- common question patterns and traps;
+- practice suggestions tied to evidence from the selected materials.

@@ -3,12 +3,14 @@ from hashlib import sha1
 import re
 
 from app.config import OUTPUT_DIR
+from app.services.markdown_formula import normalize_markdown_formulas
 
 
 def write_review_markdown(subject: str, target_score: int, markdown: str) -> Path:
     subject_dir = OUTPUT_DIR / subject
     subject_dir.mkdir(parents=True, exist_ok=True)
     output_path = _next_output_path(subject_dir, subject, target_score)
+    markdown = normalize_markdown_formulas(markdown)
     output_path.write_text(markdown, encoding="utf-8")
     return output_path
 

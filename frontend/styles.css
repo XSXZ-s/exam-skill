@@ -453,6 +453,69 @@ input {
   color: inherit;
 }
 
+.markdown-body .math-block,
+.chat-item.assistant .math-block {
+  display: block;
+  box-sizing: border-box;
+  max-width: 100%;
+  margin: 14px 0;
+  padding: 12px 14px;
+  overflow: visible;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfdff;
+  color: #111827;
+  font-family: "Cambria Math", Cambria, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.7;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-body .math-inline,
+.chat-item.assistant .math-inline {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 3px;
+  color: #111827;
+  font-family: "Cambria Math", Cambria, "Times New Roman", serif;
+  font-size: 1.03em;
+  line-height: 1.35;
+  vertical-align: baseline;
+}
+
+.markdown-body .math-text,
+.chat-item.assistant .math-text {
+  font-family: inherit;
+  font-style: normal;
+}
+
+.markdown-body .math-frac,
+.chat-item.assistant .math-frac {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  align-items: center;
+  justify-items: center;
+  margin: 0 3px;
+  vertical-align: middle;
+  break-inside: avoid;
+}
+
+.markdown-body .math-num,
+.markdown-body .math-den,
+.chat-item.assistant .math-num,
+.chat-item.assistant .math-den {
+  display: block;
+  padding: 0 5px;
+}
+
+.markdown-body .math-num,
+.chat-item.assistant .math-num {
+  border-bottom: 1px solid currentColor;
+}
+
 .markdown-body table,
 .chat-item.assistant table {
   width: 100%;
@@ -682,6 +745,26 @@ input {
     background: transparent;
     color: inherit;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .markdown-body .math-block {
+    max-width: 100%;
+    padding: 8px 10px;
+    overflow: visible;
+    font-size: 14px;
+    line-height: 1.55;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    text-align: left;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .markdown-body .math-inline {
+    max-width: 100%;
     overflow-wrap: anywhere;
     word-break: break-word;
   }

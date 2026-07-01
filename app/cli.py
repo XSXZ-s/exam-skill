@@ -64,7 +64,7 @@ def main() -> None:
         print("已取消。")
         return
 
-    quality_reports = inspect_files(knowledge_files + exam_files)
+    quality_reports = inspect_files(knowledge_files + exam_files, subject=subject)
     low_quality = low_quality_files(quality_reports)
     if low_quality:
         print("\n以下资料提取到的文字较少，可能影响分析准确性：")
@@ -74,7 +74,7 @@ def main() -> None:
                 f"{report.chunk_count} 个片段。{report.message}"
             )
         if not _ask_yes_no("是否仍然继续分析？y/N: ", default=False):
-            print("已停止。请先 OCR 或替换资料后再运行。")
+            print("已停止。请先将扫描件/图片型资料手动转为文本，或替换为可提取文字的资料后再运行。")
             return
 
     result = run_review(

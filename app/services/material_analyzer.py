@@ -9,10 +9,58 @@ from typing import Any
 
 from app.config import ROOT_DIR
 from app.services.document_loader import load_documents
+from app.services.file_hash import hash_file
 
 
-ANALYZER_VERSION = "material_analyzer_v2"
+ANALYZER_VERSION = "material_analyzer_v3"
 SAMPLE_LIMIT = 4000
+INSTRUCTION_PATTERNS = [
+    r"add",
+    r"instruction",
+    r"requirement",
+    r"需求",
+    r"要求",
+    r"提示",
+    r"说明",
+    r"老师",
+]
+EXAM_PATTERNS = [
+    r"test",
+    r"exam",
+    r"quiz",
+    r"homework",
+    r"practice",
+    r"exercise",
+    r"program_test",
+    r"mid",
+    r"习题",
+    r"练习",
+    r"作业",
+    r"试卷",
+    r"测验",
+    r"题",
+]
+KNOWLEDGE_PATTERNS = [
+    r"knowledge",
+    r"review",
+    r"summary",
+    r"target\d+",
+    r"chapter",
+    r"lecture",
+    r"slide",
+    r"textbook",
+    r"复习",
+    r"方案",
+    r"总结",
+    r"课件",
+    r"教材",
+    r"讲义",
+    r"笔记",
+    r"学习",
+]
+EXAM_CONTENT_PATTERN = r"(单选题|多选题|判断题|正确答案|答案[:：]|解析[:：]|综合编程题)"
+KNOWLEDGE_CONTENT_PATTERN = r"(学习目标|学习笔记|本章小结|知识点|概述|概论|基本概念|基本原理|重点|考点|总结|结构|原理)"
+INSTRUCTION_CONTENT_PATTERN = r"(请帮我|需要|要求|建议|提示)"
 
 
 @dataclass
@@ -54,13 +102,13 @@ def analyze_materials(subject: str, subject_dir: Path, paths: list[Path]) -> dic
 
 def _analyze_one(subject_dir: Path, path: Path, manifest: dict[str, Any]) -> MaterialFileMeta:
     relative_path = str(path.relative_to(subject_dir))
-    content_hash = _hash_file(path)
+    content_hash = hash_file(path)
     cache_key = sha1(f"{ANALYZER_VERSION}:{content_hash}:{relative_path.lower()}".encode("utf-8")).hexdigest()
     cached = manifest["files"].get(cache_key)
     if cached:
         return MaterialFileMeta(**cached)
 
-    sample = _extract_sample(path)
+    sample = _extract_sample(path, subject_dir.name)
     chapters = _detect_chapters(relative_path, sample)
     material_type, confidence, reason = _detect_material_type(path.name, sample)
     meta = MaterialFileMeta(
@@ -80,63 +128,18 @@ def _detect_material_type(filename: str, sample: str) -> tuple[str, float, str]:
     name = filename.lower()
     sample_lower = sample.lower()
 
-    instruction_patterns = [
-        r"add",
-        r"instruction",
-        r"requirement",
-        r"需求",
-        r"要求",
-        r"提示",
-        r"说明",
-        r"老师",
-    ]
-    exam_patterns = [
-        r"test",
-        r"exam",
-        r"quiz",
-        r"homework",
-        r"practice",
-        r"exercise",
-        r"program_test",
-        r"mid",
-        r"习题",
-        r"练习",
-        r"作业",
-        r"试卷",
-        r"测验",
-        r"题",
-    ]
-    knowledge_patterns = [
-        r"knowledge",
-        r"review",
-        r"summary",
-        r"target\d+",
-        r"chapter",
-        r"lecture",
-        r"slide",
-        r"textbook",
-        r"复习",
-        r"方案",
-        r"总结",
-        r"课件",
-        r"教材",
-        r"讲义",
-        r"笔记",
-        r"学习",
-    ]
-
-    if _matches_any(name, instruction_patterns) and not _matches_any(name, exam_patterns):
+    if _matches_any(name, INSTRUCTION_PATTERNS) and not _matches_any(name, EXAM_PATTERNS):
         return "instruction", 0.86, "文件名包含需求/说明类关键词。"
-    if _matches_any(name, knowledge_patterns) or re.search(r"\bch[-_ ]?\d{1,2}\b", name):
+    if _matches_any(name, KNOWLEDGE_PATTERNS) or re.search(r"\bch[-_ ]?\d{1,2}\b", name):
         return "knowledge", 0.9, "文件名包含章节课件/知识类关键词。"
-    if _matches_any(name, exam_patterns):
+    if _matches_any(name, EXAM_PATTERNS):
         return "exam", 0.92, "文件名包含习题/考试类关键词。"
 
-    if re.search(r"(单选题|多选题|判断题|正确答案|答案[:：]|解析[:：]|综合编程题)", sample):
+    if re.search(EXAM_CONTENT_PATTERN, sample):
         return "exam", 0.78, "正文包含题目、答案或解析特征。"
-    if re.search(r"(学习目标|学习笔记|本章小结|知识点|概述|开发流程)", sample):
+    if re.search(KNOWLEDGE_CONTENT_PATTERN, sample):
         return "knowledge", 0.74, "正文包含课件/讲义类结构。"
-    if re.search(r"(请帮我|需要|要求|建议|提示)", sample_lower):
+    if re.search(INSTRUCTION_CONTENT_PATTERN, sample_lower):
         return "instruction", 0.62, "正文包含需求描述特征。"
     return "other", 0.35, "未识别到明确资料类型。"
 
@@ -194,11 +197,11 @@ def _build_summary(groups: list[MaterialGroup]) -> str:
     return "识别为多组未标注章节资料。"
 
 
-def _extract_sample(path: Path) -> str:
+def _extract_sample(path: Path, subject: str | None = None) -> str:
     try:
         if path.suffix.lower() in {".txt", ".md"}:
             return path.read_text(encoding="utf-8", errors="ignore")[:SAMPLE_LIMIT]
-        documents = load_documents([path])
+        documents = load_documents([path], subject=subject)
         parts = []
         for doc in documents:
             content = doc.page_content.strip()
@@ -231,14 +234,15 @@ def _chapter_number(raw: str) -> int | None:
         "九": 9,
         "十": 10,
     }
+    raw = raw.strip()
     if raw == "十":
         return 10
-    if raw.startswith("十") and len(raw) == 2:
-        return 10 + chinese_digits.get(raw[1], 0)
-    if raw.endswith("十") and len(raw) == 2:
-        return chinese_digits.get(raw[0], 0) * 10
-    if "十" in raw and len(raw) == 3:
-        return chinese_digits.get(raw[0], 0) * 10 + chinese_digits.get(raw[2], 0)
+    if "十" in raw:
+        tens, _, ones = raw.partition("十")
+        tens_value = chinese_digits.get(tens, 1) if tens else 1
+        ones_value = chinese_digits.get(ones, 0) if ones else 0
+        value = tens_value * 10 + ones_value
+        return value if 0 < value < 100 else None
     return chinese_digits.get(raw)
 
 
@@ -257,14 +261,6 @@ def _selected_fingerprint(metas: list[MaterialFileMeta]) -> str:
         sort_keys=True,
     )
     return sha256(f"{ANALYZER_VERSION}:{raw}".encode("utf-8")).hexdigest()
-
-
-def _hash_file(path: Path) -> str:
-    digest = sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _manifest_path(subject: str) -> Path:

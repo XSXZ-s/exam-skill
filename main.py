@@ -4,14 +4,14 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import OUTPUT_DIR, RESOURCES_DIR
+from app.services.document_loader import SUPPORTED_EXTENSIONS
 
 
 app = FastAPI(title="Exam Skill RAG API")
 FRONTEND_DIR = Path(__file__).resolve().parent / "frontend"
-SUPPORTED_EXTENSIONS = {".pdf", ".pptx", ".docx", ".txt", ".md"}
 
 if FRONTEND_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
@@ -20,22 +20,23 @@ if FRONTEND_DIR.exists():
 class AnalyzePayload(BaseModel):
     knowledge_files: list[str]
     exam_files: list[str]
-    instruction_files: list[str] = []
+    instruction_files: list[str] = Field(default_factory=list)
+    material_groups: list[dict] = Field(default_factory=list)
     target_score: int
     allow_low_quality: bool = False
 
 
 class MaterialAnalyzePayload(BaseModel):
-    files: list[str] = []
+    files: list[str] = Field(default_factory=list)
     include_all: bool = False
 
 
 class ChatPayload(BaseModel):
     question: str
     output_file: str
-    knowledge_files: list[str] = []
-    exam_files: list[str] = []
-    instruction_files: list[str] = []
+    knowledge_files: list[str] = Field(default_factory=list)
+    exam_files: list[str] = Field(default_factory=list)
+    instruction_files: list[str] = Field(default_factory=list)
     target_score: int = 85
 
 
@@ -54,30 +55,6 @@ def index() -> FileResponse:
 @app.get("/subjects")
 def list_subjects() -> dict[str, list[str]]:
     return {"subjects": _discover_subjects(RESOURCES_DIR)}
-
-
-@app.get("/system/ocr/status")
-def get_ocr_status() -> dict:
-    from app.services.ocr_manager import ocr_status
-
-    return ocr_status()
-
-
-@app.post("/system/ocr/install")
-def install_ocr() -> dict:
-    from app.services.ocr_manager import start_ocr_install
-
-    return start_ocr_install()
-
-
-@app.get("/system/tasks/{task_id}")
-def get_system_task(task_id: str) -> dict:
-    from app.services.ocr_manager import get_task
-
-    task = get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
 
 
 @app.get("/subjects/{subject}/files")
@@ -115,7 +92,7 @@ def analyze_subject(subject: str, payload: AnalyzePayload) -> dict:
     knowledge_files = [_resolve_subject_file(subject_dir, p) for p in payload.knowledge_files]
     exam_files = [_resolve_subject_file(subject_dir, p) for p in payload.exam_files]
     instruction_files = [_resolve_instruction_file(subject_dir, p) for p in payload.instruction_files]
-    quality_reports = inspect_files(knowledge_files + exam_files)
+    quality_reports = inspect_files(knowledge_files + exam_files, subject=subject)
     low_quality = low_quality_files(quality_reports)
     if low_quality and not payload.allow_low_quality:
         raise HTTPException(
@@ -131,6 +108,7 @@ def analyze_subject(subject: str, payload: AnalyzePayload) -> dict:
         knowledge_files=knowledge_files,
         exam_files=exam_files,
         instruction_files=instruction_files,
+        material_groups=payload.material_groups,
         target_score=payload.target_score,
     )
     result = run_review(request)

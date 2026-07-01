@@ -1,12 +1,13 @@
 import json
 from dataclasses import dataclass
-from hashlib import sha1, sha256
+from hashlib import sha1
 from pathlib import Path
 from typing import Any
 
 from app.config import CHROMA_DIR, settings
 from app.services.document_loader import load_documents
-from app.services.splitter import split_documents
+from app.services.file_hash import hash_file
+from app.services.semantic_splitter import SEMANTIC_SPLITTER_VERSION, semantic_chunks_for_file
 from app.services.vectorstore import delete_documents, index_documents
 
 
@@ -17,14 +18,21 @@ class IndexStats:
     indexed_chunks: int = 0
 
 
-def ensure_files_indexed(subject: str, store_type: str, paths: list[Path]) -> IndexStats:
+def ensure_files_indexed(
+    subject: str,
+    store_type: str,
+    paths: list[Path],
+    chapter_hints: dict[Path, str] | None = None,
+) -> IndexStats:
     manifest = _load_manifest(subject)
     stats = IndexStats()
+    chapter_hints = chapter_hints or {}
 
     for path in paths:
-        file_hash = _hash_file(path)
+        chapter_hint = chapter_hints.get(path.resolve())
+        file_hash = hash_file(path)
         file_key = _file_key(store_type, path)
-        fingerprint = _fingerprint(store_type, file_hash)
+        fingerprint = _fingerprint(store_type, file_hash, chapter_hint)
         existing = manifest["files"].get(file_key)
 
         if existing and existing.get("fingerprint") == fingerprint:
@@ -44,15 +52,16 @@ def ensure_files_indexed(subject: str, store_type: str, paths: list[Path]) -> In
         if existing:
             delete_documents(subject, store_type, existing.get("chunk_ids", []))
 
-        documents = load_documents([path])
-        chunks = split_documents(documents)
-        chunk_ids = [_chunk_id(store_type, file_hash, i) for i, _ in enumerate(chunks)]
+        documents = load_documents([path], subject=subject)
+        chunks = semantic_chunks_for_file(subject, store_type, path, documents, chapter_hint=chapter_hint)
+        chunk_ids = [str(chunk.metadata.get("chunk_id") or _chunk_id(store_type, file_hash, i)) for i, chunk in enumerate(chunks)]
         for i, chunk in enumerate(chunks):
             chunk.metadata.update(
                 {
                     "store_type": store_type,
                     "content_hash": file_hash,
                     "chunk_index": i,
+                    "splitter_version": SEMANTIC_SPLITTER_VERSION,
                 }
             )
 
@@ -67,6 +76,8 @@ def ensure_files_indexed(subject: str, store_type: str, paths: list[Path]) -> In
             "embedding_model": settings.embedding_model,
             "chunk_size": settings.chunk_size,
             "chunk_overlap": settings.chunk_overlap,
+            "splitter_version": SEMANTIC_SPLITTER_VERSION,
+            "chapter_hint": chapter_hint,
         }
         stats.indexed_files += 1
         stats.indexed_chunks += len(chunks)
@@ -76,7 +87,7 @@ def ensure_files_indexed(subject: str, store_type: str, paths: list[Path]) -> In
 
 
 def file_hashes(paths: list[Path]) -> list[str]:
-    return [_hash_file(path) for path in paths]
+    return [hash_file(path) for path in paths]
 
 
 def _manifest_path(subject: str) -> Path:
@@ -99,20 +110,12 @@ def _save_manifest(subject: str, manifest: dict[str, Any]) -> None:
     )
 
 
-def _hash_file(path: Path) -> str:
-    digest = sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
 def _file_key(store_type: str, path: Path) -> str:
     resolved = str(path.resolve()).lower()
     return sha1(f"{store_type}:{resolved}".encode("utf-8")).hexdigest()
 
 
-def _fingerprint(store_type: str, file_hash: str) -> str:
+def _fingerprint(store_type: str, file_hash: str, chapter_hint: str | None = None) -> str:
     raw = "|".join(
         [
             store_type,
@@ -120,6 +123,8 @@ def _fingerprint(store_type: str, file_hash: str) -> str:
             settings.embedding_model,
             str(settings.chunk_size),
             str(settings.chunk_overlap),
+            SEMANTIC_SPLITTER_VERSION,
+            chapter_hint or "",
         ]
     )
     return sha1(raw.encode("utf-8")).hexdigest()

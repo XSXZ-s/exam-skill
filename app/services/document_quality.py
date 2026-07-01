@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.services.document_loader import load_documents
-from app.services.splitter import split_documents
+from app.services.semantic_splitter import split_documents
 
 
 @dataclass
@@ -30,17 +30,17 @@ class FileQuality:
         }
 
 
-def inspect_files(paths: list[Path]) -> list[FileQuality]:
-    return [_inspect_one(path) for path in paths]
+def inspect_files(paths: list[Path], subject: str | None = None) -> list[FileQuality]:
+    return [_inspect_one(path, subject=subject) for path in paths]
 
 
 def low_quality_files(reports: list[FileQuality]) -> list[FileQuality]:
     return [report for report in reports if report.is_low_quality]
 
 
-def _inspect_one(path: Path) -> FileQuality:
+def _inspect_one(path: Path, subject: str | None = None) -> FileQuality:
     try:
-        documents = load_documents([path])
+        documents = load_documents([path], subject=subject)
         extracted_chars = sum(len(doc.page_content.strip()) for doc in documents)
         chunk_count = len(split_documents(documents)) if documents else 0
     except Exception as exc:

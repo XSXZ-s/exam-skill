@@ -17,6 +17,7 @@ class ReviewRequest(BaseModel):
     knowledge_files: list[Path]
     exam_files: list[Path]
     instruction_files: list[Path] = Field(default_factory=list)
+    material_groups: list[dict] = Field(default_factory=list)
     target_score: int = Field(ge=0, le=100)
 
 

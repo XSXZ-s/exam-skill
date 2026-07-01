@@ -50,6 +50,11 @@ class AppSettings(BaseModel):
     retrieval_k: int = Field(default=_env_int("RETRIEVAL_K", 10), ge=1)
     retrieval_fetch_k: int = Field(default=_env_int("RETRIEVAL_FETCH_K", 30), ge=1)
     min_extracted_chars: int = Field(default=_env_int("MIN_EXTRACTED_CHARS", 200), ge=0)
+    context_window_tokens: int = Field(default=_env_int("CONTEXT_WINDOW_TOKENS", 64000), ge=8000)
+    output_token_reserve: int = Field(default=_env_int("OUTPUT_TOKEN_RESERVE", 12000), ge=2000)
+    audit_token_reserve: int = Field(default=_env_int("AUDIT_TOKEN_RESERVE", 6000), ge=1000)
+    full_context_ratio_percent: int = Field(default=_env_int("FULL_CONTEXT_RATIO_PERCENT", 55), ge=10, le=90)
+    audit_missing_point_limit: int = Field(default=_env_int("AUDIT_MISSING_POINT_LIMIT", 12), ge=0)
 
 
 settings = AppSettings()

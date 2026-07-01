@@ -142,7 +142,9 @@ async function analyze() {
     const materialPlan = await analyzeMaterials(subject, selectedFiles);
     payload = payloadFromMaterialPlan(materialPlan, score);
     if (!payload.knowledge_files.length || !payload.exam_files.length) {
-      throw new Error("未能同时识别出课件/知识资料和习题/出题参考资料，请检查选择或手动调整文件命名。");
+      hideGenerationStatus();
+      await handleMaterialClassificationMissing(materialPlan);
+      return;
     }
     showGenerationStatus(`${materialPlan.summary} 正在生成复习方案...`);
     const result = await postAnalyze(subject, payload);
@@ -158,28 +160,7 @@ async function analyze() {
   } catch (error) {
     if (error.status === 409 && error.detail && Array.isArray(error.detail.files)) {
       hideGenerationStatus();
-      const shouldContinue = await handleLowQualityFiles(error.detail);
-      if (shouldContinue) {
-        try {
-          showGenerationStatus("正在继续生成复习方案，请保持服务运行。");
-          const result = await postAnalyze(subject, { ...payload, allow_low_quality: true });
-          hideGenerationStatus();
-          setMarkdown(result.markdown || "");
-          const outputFile = result.output_file || "";
-          await loadOutputs(subject);
-          if (outputFile) {
-            outputSelect.value = outputFile;
-            await readOutput(outputFile);
-          }
-          setBusy(false, `分析完成：${result.output_file || result.output_path}`);
-          return;
-        } catch (retryError) {
-          hideGenerationStatus();
-          showStatusError(retryError);
-          return;
-        }
-      }
-      setBusy(false, "已停止分析。请先 OCR 或替换低质量资料。");
+      await handleLowQualityFiles(error.detail);
       return;
     }
     hideGenerationStatus();
@@ -187,85 +168,41 @@ async function analyze() {
   }
 }
 
+async function handleMaterialClassificationMissing(plan) {
+  const summary = formatMaterialPlanSummary(plan);
+  showManualTextConversionPrompt([
+    "系统没有同时识别出“课件/知识资料”和“习题/出题参考资料”。",
+    "",
+    summary,
+    "",
+    "如果你选择的是图片、截图或扫描件，当前版本建议先手动转为文本类资料后再生成。",
+    "也请确认本次同时选择了对应的课件和习题资料；如果文件名不清晰，可以标注“第x章课件 / 第x章习题”。",
+  ]);
+}
+
 async function handleLowQualityFiles(detail) {
   const summary = detail.files
     .map((file) => `${file.path}：提取到 ${file.extracted_chars} 个字符，${file.chunk_count} 个片段`)
     .join("\n");
-  const ocrStatus = await safeOcrStatus();
-  const baseMessage = [
+  showManualTextConversionPrompt([
     "检测到部分资料可提取文字较少，可能是扫描 PDF、图片型课件、截图题目，或文件解析失败。",
     "",
     summary,
     "",
-    "这类资料如果不先进行 OCR，后续生成的复习方案可能遗漏图片或扫描件中的重要内容。",
-    "纯文本、Markdown、Word 和可搜索 PDF 解析速度更快；启用 OCR 后可识别图片文字，但首次安装和后续分析都会更耗时。",
-  ].join("\n");
-
-  if (ocrStatus && ocrStatus.installed) {
-    return window.confirm(`${baseMessage}\n\n本地 OCR 增强包已安装。是否仍然继续分析？`);
-  }
-
-  const installOcr = window.confirm(
-    [
-      baseMessage,
-      "",
-      "是否现在安装本地 OCR 增强包？",
-      "安装可能需要较长时间，并会占用更多磁盘空间。安装完成后，可帮助分析图片和扫描件资料。",
-      "",
-      "选择“确定”：开始安装本地 OCR 增强包。",
-      "选择“取消”：不安装 OCR，你可以手动将图片或扫描件转换为文本后再放入 resources，以免影响方案完整性。",
-    ].join("\n"),
-  );
-
-  if (installOcr) {
-    await startOcrInstall();
-    return false;
-  }
-
-  return window.confirm(
-    [
-      "未安装 OCR 增强包。",
-      "如果继续，系统只会基于已提取到的少量文字生成，方案可能不完整。",
-      "",
-      "是否仍然继续分析？",
-    ].join("\n"),
-  );
+    "当前版本暂不在前端提供 OCR 安装入口。为保证方案完整性，请先手动将这类资料转为 Markdown、TXT、Word 或可搜索 PDF 后再生成。",
+  ]);
 }
 
-async function safeOcrStatus() {
-  try {
-    return await requestJson("/system/ocr/status");
-  } catch {
-    return null;
-  }
-}
-
-async function startOcrInstall() {
-  try {
-    const result = await requestJson("/system/ocr/install", { method: "POST" });
-    if (result.installed) {
-      setBusy(false, result.message || "本地 OCR 增强包已安装。");
-      return;
-    }
-    const task = result.task || {};
-    setBusy(
-      false,
-      task.id
-        ? `OCR 安装任务已开始：${task.id}。请稍后刷新或查看任务状态。`
-        : result.message || "OCR 安装任务已开始。",
-    );
-    window.alert(
-      [
-        result.message || "已开始安装本地 OCR 增强包。",
-        "安装期间请保持后端服务运行。安装完成后，再重新生成复习方案。",
-        task.log_path ? `安装日志：${task.log_path}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-  } catch (error) {
-    showStatusError(error);
-  }
+function showManualTextConversionPrompt(lines) {
+  window.alert(
+    [
+      ...lines,
+      "",
+      "推荐格式：Markdown、TXT、Word 或可搜索 PDF。",
+      "图片、截图和扫描件请先使用系统/WPS/微信等工具转文字后再放入 resources。当前生成已停止。",
+    ].join("\n"),
+  );
+  setBusy(false, "请先将图片/扫描件手动转为文本类资料后再生成。");
 }
 
 async function postAnalyze(subject, payload) {
@@ -297,8 +234,24 @@ function payloadFromMaterialPlan(plan, score) {
     knowledge_files: Array.from(knowledge),
     exam_files: Array.from(exam),
     instruction_files: Array.from(instruction),
+    material_groups: plan.groups || [],
     target_score: score,
   };
+}
+
+function formatMaterialPlanSummary(plan) {
+  const groups = plan.groups || [];
+  if (!groups.length) return "未识别到可用资料分组。";
+  return groups
+    .map((group) => {
+      const parts = [];
+      if ((group.knowledge_files || []).length) parts.push(`课件/知识：${group.knowledge_files.join("，")}`);
+      if ((group.exam_files || []).length) parts.push(`习题/试卷：${group.exam_files.join("，")}`);
+      if ((group.instruction_files || []).length) parts.push(`需求说明：${group.instruction_files.join("，")}`);
+      if ((group.other_files || []).length) parts.push(`未分类：${group.other_files.join("，")}`);
+      return `${group.chapter || group.group_id || "未识别分组"}：${parts.join("；") || "无可用文件"}`;
+    })
+    .join("\n");
 }
 
 async function askQuestion() {
@@ -550,7 +503,10 @@ function renderMarkdown(markdown) {
   let table = [];
   let code = [];
   let quote = [];
+  let displayMath = [];
   let inCode = false;
+  let inDisplayMath = false;
+  let displayMathEnd = "$$";
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
@@ -578,6 +534,11 @@ function renderMarkdown(markdown) {
     html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
     code = [];
   };
+  const flushDisplayMath = () => {
+    if (!displayMath.length) return;
+    html.push(renderDisplayMath(displayMath.join("\n")));
+    displayMath = [];
+  };
   const flushBlocks = () => {
     flushParagraph();
     flushList();
@@ -599,6 +560,44 @@ function renderMarkdown(markdown) {
 
     if (inCode) {
       code.push(line);
+      return;
+    }
+
+    const trimmedLine = line.trim();
+    if (trimmedLine === "$$" || trimmedLine === "\\[") {
+      if (inDisplayMath) {
+        flushDisplayMath();
+        inDisplayMath = false;
+      } else {
+        flushBlocks();
+        inDisplayMath = true;
+        displayMathEnd = trimmedLine === "\\[" ? "\\]" : "$$";
+      }
+      return;
+    }
+
+    if (inDisplayMath && trimmedLine === displayMathEnd) {
+      flushDisplayMath();
+      inDisplayMath = false;
+      displayMathEnd = "$$";
+      return;
+    }
+
+    if (inDisplayMath) {
+      displayMath.push(line);
+      return;
+    }
+
+    const singleLineMath = trimmedLine.match(/^\$\$(.+)\$\$$/);
+    if (singleLineMath) {
+      flushBlocks();
+      html.push(renderDisplayMath(singleLineMath[1].trim()));
+      return;
+    }
+    const singleLineBracketMath = trimmedLine.match(/^\\\[(.+)\\\]$/);
+    if (singleLineBracketMath) {
+      flushBlocks();
+      html.push(renderDisplayMath(singleLineBracketMath[1].trim()));
       return;
     }
 
@@ -651,6 +650,7 @@ function renderMarkdown(markdown) {
   });
 
   flushCode();
+  flushDisplayMath();
   flushBlocks();
   return html.join("");
 }
@@ -687,11 +687,126 @@ function renderTable(lines) {
 }
 
 function inlineMarkdown(text) {
-  return escapeHtml(text)
+  const math = [];
+  const stashMath = (expression) => {
+    const token = `@@MATH_${math.length}@@`;
+    math.push(renderInlineMath(expression.trim()));
+    return token;
+  };
+  const textWithMathTokens = text
+    .replace(/\\\((.+?)\\\)/g, (match, expression) => stashMath(expression))
+    .replace(/(^|[^\\])\$([^$\n]+?)\$/g, (match, prefix, expression) => `${prefix}${stashMath(expression)}`);
+
+  let html = escapeHtml(textWithMathTokens)
     .replace(/\\([*_`])/g, "$1")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>')
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  math.forEach((rendered, index) => {
+    html = html.replace(`@@MATH_${index}@@`, rendered);
+  });
+  return html;
+}
+
+function renderDisplayMath(expression) {
+  return `<div class="math-block">${renderMathExpression(expression)}</div>`;
+}
+
+function renderInlineMath(expression) {
+  return `<span class="math-inline">${renderMathExpression(expression)}</span>`;
+}
+
+function renderMathExpression(expression) {
+  let rendered = escapeHtml(expression.trim());
+  rendered = renderLatexFractions(rendered);
+  rendered = rendered
+    .replace(/\\text\{([^{}]+)\}/g, '<span class="math-text">$1</span>')
+    .replace(/\\mathrm\{([^{}]+)\}/g, '<span class="math-text">$1</span>')
+    .replace(/\\times/g, "×")
+    .replace(/\\cdot/g, "·")
+    .replace(/(\S)\s*\*\s*(?=\S)/g, "$1×")
+    .replace(/\\div/g, "÷")
+    .replace(/\\sum/g, "∑")
+    .replace(/\\Delta/g, "Δ")
+    .replace(/\\mu/g, "μ")
+    .replace(/\\alpha/g, "α")
+    .replace(/\\beta/g, "β")
+    .replace(/\\gamma/g, "γ")
+    .replace(/\\rightarrow|\\to/g, "→")
+    .replace(/\\leftrightarrow/g, "↔")
+    .replace(/\\leq/g, "≤")
+    .replace(/\\geq/g, "≥")
+    .replace(/\\neq/g, "≠")
+    .replace(/\\approx/g, "≈")
+    .replace(/\\%/g, "%")
+    .replace(/\\_/g, "_")
+    .replace(/\^\{([^{}]+)\}/g, "<sup>$1</sup>")
+    .replace(/_\{([^{}]+)\}/g, "<sub>$1</sub>")
+    .replace(/\^([A-Za-z0-9+\-=]+)/g, "<sup>$1</sup>")
+    .replace(/_([A-Za-z0-9+\-=]+)/g, "<sub>$1</sub>")
+    .replace(/\\([A-Za-z]+)/g, "$1");
+  return rendered;
+}
+
+function renderLatexFractions(expression) {
+  let rendered = "";
+  let index = 0;
+
+  while (index < expression.length) {
+    const fractionIndex = expression.indexOf("\\frac", index);
+    if (fractionIndex === -1) {
+      rendered += expression.slice(index);
+      break;
+    }
+
+    rendered += expression.slice(index, fractionIndex);
+    const numerator = readLatexGroup(expression, fractionIndex + "\\frac".length);
+    if (!numerator) {
+      rendered += "\\frac";
+      index = fractionIndex + "\\frac".length;
+      continue;
+    }
+    const denominator = readLatexGroup(expression, numerator.nextIndex);
+    if (!denominator) {
+      rendered += expression.slice(fractionIndex, numerator.nextIndex);
+      index = numerator.nextIndex;
+      continue;
+    }
+
+    rendered += `<span class="math-frac"><span class="math-num">${renderLatexFractions(numerator.value)}</span><span class="math-den">${renderLatexFractions(denominator.value)}</span></span>`;
+    index = denominator.nextIndex;
+  }
+
+  return rendered;
+}
+
+function readLatexGroup(text, startIndex) {
+  let index = startIndex;
+  while (text[index] === " ") index += 1;
+  if (text[index] !== "{") return null;
+
+  let depth = 0;
+  let value = "";
+  for (; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === "{") {
+      if (depth > 0) value += char;
+      depth += 1;
+      continue;
+    }
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return { value, nextIndex: index + 1 };
+      }
+      value += char;
+      continue;
+    }
+    value += char;
+  }
+
+  return null;
 }
 
 async function requestJson(url, options) {
@@ -770,4 +885,10 @@ function hashCode(value) {
     hash |= 0;
   }
   return Math.abs(hash);
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
